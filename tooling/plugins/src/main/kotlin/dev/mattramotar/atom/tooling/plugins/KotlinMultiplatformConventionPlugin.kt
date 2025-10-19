@@ -1,0 +1,125 @@
+package dev.mattramotar.atom.tooling.plugins
+
+import dev.mattramotar.atom.tooling.extensions.configureKotlin
+import dev.mattramotar.atom.tooling.extensions.libs
+import kotlinx.kover.gradle.plugin.dsl.KoverProjectExtension
+import org.gradle.api.Plugin
+import org.gradle.api.Project
+import org.gradle.kotlin.dsl.configure
+import org.gradle.kotlin.dsl.dependencies
+import org.gradle.kotlin.dsl.getByType
+import org.gradle.kotlin.dsl.withType
+import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
+import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
+import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
+import java.util.Locale.getDefault
+
+class KotlinMultiplatformConventionPlugin : Plugin<Project> {
+    override fun apply(target: Project) = with(target) {
+        with(pluginManager) {
+            apply("org.jetbrains.kotlin.multiplatform")
+            apply("org.jetbrains.kotlinx.kover")
+        }
+
+        extensions.configure<KotlinMultiplatformExtension> {
+            applyDefaultHierarchyTemplate()
+
+            androidTarget()
+
+            jvm()
+
+            iosX64()
+            iosArm64()
+            iosSimulatorArm64()
+
+            js {
+                browser()
+            }
+
+            targets.all {
+                compilations.all {
+                    compileTaskProvider.configure {
+                        compilerOptions {
+                            freeCompilerArgs.add("-Xexpect-actual-classes")
+                        }
+                    }
+                }
+            }
+
+            sourceSets.commonTest.dependencies {
+                val coroutinesTest = libs.findLibrary("kotlinx-coroutines-test").get()
+                val kotlinTest = libs.findLibrary("kotlin-test").get()
+                val turbine = libs.findLibrary("turbine").get()
+
+                implementation(coroutinesTest)
+                implementation(kotlinTest)
+                implementation(turbine)
+            }
+
+            targets.withType<KotlinNativeTarget>().configureEach {
+                compilations.configureEach {
+                    compileTaskProvider.configure {
+                        compilerOptions {
+                            freeCompilerArgs.add("-Xallocator=custom")
+                            freeCompilerArgs.add("-Xadd-light-debug=enable")
+
+                            freeCompilerArgs.addAll(
+                                "-opt-in=kotlin.RequiresOptIn",
+                                "-opt-in=kotlin.time.ExperimentalTime",
+                                "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
+                                "-opt-in=kotlinx.coroutines.FlowPreview",
+                                "-opt-in=kotlinx.cinterop.ExperimentalForeignApi",
+                                "-opt-in=kotlinx.cinterop.BetaInteropApi",
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        extensions.configure<KoverProjectExtension> {
+            reports {
+                total {
+                    xml {
+                        onCheck.set(true)
+                        xmlFile.set(target.layout.buildDirectory.file("reports/kover/coverage.xml"))
+                    }
+                }
+            }
+        }
+
+        configureKotlin()
+    }
+}
+
+fun Project.addKspDependencyForAllTargets(dependencyNotation: Any) =
+    addKspDependencyForAllTargets("", dependencyNotation)
+
+private fun Project.addKspDependencyForAllTargets(
+    configurationNameSuffix: String,
+    dependencyNotation: Any,
+) {
+    val kmpExtension = extensions.getByType<KotlinMultiplatformExtension>()
+    dependencies {
+        kmpExtension.targets
+            .asSequence()
+            .filter { target ->
+                target.platformType != KotlinPlatformType.common
+            }
+            .forEach { target ->
+                add(
+                    "ksp${
+                        target.targetName.capitalized()
+                    }$configurationNameSuffix",
+                    dependencyNotation,
+                )
+            }
+    }
+}
+
+private fun String.capitalized() =
+    let {
+        if (it.isEmpty()) it else it[0].titlecase(getDefault()) + it.substring(
+            1
+        )
+    }
