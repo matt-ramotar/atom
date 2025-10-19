@@ -1,7 +1,6 @@
 package dev.mattramotar.atom.tooling.plugins
 
 import com.android.build.gradle.LibraryExtension
-import dev.mattramotar.atom.tooling.extensions.Versions
 import dev.mattramotar.atom.tooling.extensions.configureAndroid
 import org.gradle.api.JavaVersion
 import org.gradle.api.Plugin
