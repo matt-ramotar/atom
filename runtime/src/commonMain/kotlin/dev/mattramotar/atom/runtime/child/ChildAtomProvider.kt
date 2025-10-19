@@ -1,0 +1,182 @@
+package dev.mattramotar.atom.runtime.child
+
+import dev.mattramotar.atom.runtime.Atom
+import dev.mattramotar.atom.runtime.AtomKey
+import dev.mattramotar.atom.runtime.AtomLifecycle
+import dev.mattramotar.atom.runtime.factory.AtomFactoryRegistry
+import dev.mattramotar.atom.runtime.state.StateHandleFactory
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlin.reflect.KClass
+
+/**
+ * Manages a dynamic collection of child atoms.
+ *
+ * [ChildAtomProvider] enables parent atoms to manage child atom lifecycles:
+ *
+ * ```kotlin
+ * class PostListAtom(...) : Atom<PostListState, ...> {
+ *     private val children = ChildAtomProvider(scope, stateHandleFactory, registry)
+ *
+ *     suspend fun syncPosts(posts: List<Post>) {
+ *         children.sync(
+ *             type = PostAtom::class,
+ *             items = posts.associateBy { it.id }.mapValues {
+ *                 PostAtomParams(postId = it.key)
+ *             }
+ *         )
+ *     }
+ * }
+ * ```
+ *
+ * ## Synchronization
+ *
+ * [sync] creates atoms for new items and disposes atoms for removed items.
+ *
+ * @see Atom for parent atom integration
+ */
+open class ChildAtomProvider(
+    private val parentScope: CoroutineScope,
+    private val stateHandleFactory: StateHandleFactory,
+    private val registry: AtomFactoryRegistry,
+) {
+    private data class Entry(
+        val lifecycle: AtomLifecycle,
+        val scope: CoroutineScope
+    )
+
+    private val children = mutableMapOf<AtomKey, Entry>()
+    private val mutex = Mutex()
+
+    suspend fun <A : AtomLifecycle, P : Any> getOrCreate(
+        type: KClass<A>,
+        id: Any,
+        params: P
+    ): A = mutex.withLock {
+        val key = AtomKey(type, id)
+
+        @Suppress("UNCHECKED_CAST")
+        return (children.getOrPut(key) {
+            createEntry(type, key, params)
+        }.lifecycle as A)
+    }
+
+    suspend fun <A : AtomLifecycle> getOrCreate(type: KClass<A>, id: Any): A =
+        getOrCreate(type, id, Unit)
+
+    suspend fun <A : AtomLifecycle, P : Any> sync(
+        type: KClass<A>,
+        items: Map<Any, P>
+    ) {
+        val toCreate = mutableListOf<Triple<KClass<A>, AtomKey, P>>()
+        val toDispose = mutableListOf<AtomKey>()
+
+        mutex.withLock {
+            val activeKeys = items.keys.map { AtomKey(type, it) }.toSet()
+            children.keys.filter { it.type == type && it !in activeKeys }.forEach { toDispose += it }
+            items.forEach { (id, params) ->
+                val key = AtomKey(type, id)
+                if (children[key] == null) {
+                    toCreate += Triple(type, key, params)
+                }
+            }
+        }
+
+        // Dispose outside lock
+        toDispose.forEach { key -> disposeUnsafe(key) }
+
+        // Create outside lock, then install under lock
+        toCreate.forEach { (t, key, params) ->
+            val entry = registry.entryFor(t) ?: error("No factory for ${t.simpleName}!")
+            val childScope =
+                CoroutineScope(parentScope.coroutineContext + SupervisorJob(parentScope.coroutineContext[Job]))
+            @Suppress("UNCHECKED_CAST") val stateClass = entry.stateClass as KClass<Any>
+            val state = stateHandleFactory.create(key, stateClass, { entry.initialAny(params) }, entry.serializerAny)
+            @Suppress("UNCHECKED_CAST") val atom = entry.createAny(childScope, state, params)
+            runCatching { atom.onStart() }
+
+            mutex.withLock {
+                if (!children.contains(key)) {
+                    children[key] = Entry(atom, childScope)
+                } else {
+                    // If someone else won the race, dispose the extra
+                    runCatching { atom.onStop() }
+                    runCatching { atom.onDispose() }
+                    childScope.coroutineContext[Job]?.cancel()
+                }
+            }
+        }
+    }
+
+    suspend fun <A : AtomLifecycle> sync(
+        type: KClass<A>,
+        ids: Collection<Any>
+    ) {
+        sync(type, ids.associateWith { Unit })
+    }
+
+    suspend fun <A : AtomLifecycle> get(type: KClass<A>, id: Any): A? = mutex.withLock {
+        @Suppress("UNCHECKED_CAST")
+        return children[AtomKey(type, id)]?.lifecycle as? A
+    }
+
+    private fun <A : AtomLifecycle, P : Any> createEntry(
+        type: KClass<A>,
+        key: AtomKey,
+        params: P
+    ): Entry {
+        val entry = registry.entryFor(type)
+            ?: error("No factory for ${type.simpleName}")
+
+        require(
+            entry.paramsClass.isInstance(params) ||
+                    (params == Unit && entry.paramsClass == Unit::class)
+        ) {
+            "Expected ${entry.paramsClass.simpleName} but got ${params::class.simpleName}"
+        }
+
+        val childScope = CoroutineScope(
+            parentScope.coroutineContext + SupervisorJob(parentScope.coroutineContext[Job])
+        )
+
+        @Suppress("UNCHECKED_CAST")
+        val stateClass = entry.stateClass as KClass<Any>
+        val state = stateHandleFactory.create(
+            key = key,
+            stateClass = stateClass,
+            initial = { entry.initialAny(params) },
+            serializer = entry.serializerAny
+        )
+
+        @Suppress("UNCHECKED_CAST")
+        val atom = entry.createAny(childScope, state, params) as A
+
+        runCatching { atom.onStart() }
+
+        return Entry(atom, childScope)
+    }
+
+    private fun disposeUnsafe(key: AtomKey) {
+        children.remove(key)?.let { entry ->
+            runCatching { entry.lifecycle.onStop() }
+            runCatching { entry.lifecycle.onDispose() }
+            entry.scope.coroutineContext[Job]?.cancel()
+        }
+    }
+
+    suspend fun clear() {
+        val toDispose: List<Entry> = mutex.withLock {
+            val values = children.values.toList()
+            children.clear()
+            values
+        }
+        toDispose.forEach { entry ->
+            runCatching { entry.lifecycle.onStop() }
+            runCatching { entry.lifecycle.onDispose() }
+            entry.scope.coroutineContext[Job]?.cancel()
+        }
+    }
+}
