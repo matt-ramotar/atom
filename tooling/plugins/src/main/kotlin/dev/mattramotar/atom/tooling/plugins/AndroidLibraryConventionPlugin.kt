@@ -15,14 +15,12 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
                 apply("com.android.library")
             }
 
+            configureAndroid()
             extensions.configure<LibraryExtension> {
                 compileOptions {
                     sourceCompatibility = JavaVersion.VERSION_17
                     targetCompatibility = JavaVersion.VERSION_17
                 }
-
-                configureAndroid()
-                defaultConfig.targetSdk = Versions.TARGET_SDK
             }
         }
     }
