@@ -58,13 +58,13 @@ open class ChildAtomProvider(
     ): A = mutex.withLock {
         val key = AtomKey(type, id)
 
-        @Suppress("UNCHECKED_CAST")
         val entry = children.getOrPut(key) {
             val newEntry = createEntry(type, key, params)
             // Start only after successful installation
             runCatching { newEntry.lifecycle.onStart() }
             newEntry
         }
+        @Suppress("UNCHECKED_CAST")
         return entry.lifecycle as A
     }
 
