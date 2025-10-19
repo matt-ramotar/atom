@@ -45,8 +45,12 @@ class AtomStore {
     /**
      * Acquires an atom, creating it if necessary.
      *
+     * **Lifecycle Guarantee**: [AtomLifecycle.onStart] is called only after successful installation,
+     * ensuring no unbalanced lifecycle callbacks even in concurrent scenarios.
+     *
      * @param key The atom key
-     * @param create Lambda that creates the atom (called only if atom doesn't exist)
+     * @param create Lambda that creates the atom (called only if atom doesn't exist).
+     *               Should NOT call [AtomLifecycle.onStart] - the store handles that.
      * @return The atom instance (existing or newly created)
      */
     @Suppress("UNCHECKED_CAST")
@@ -71,17 +75,17 @@ class AtomStore {
         lock.withLock {
             val existing = map[key]
             if (existing != null) {
-                // Lost race - use existing
+                // Lost race - use existing, cleanup discarded atom
                 existing.refs++
-                // Dispose our extra
+                // Cancel job but skip lifecycle calls (atom was never "started" by store)
                 job?.cancel()
-                runCatching { atom.onDispose() }
                 @Suppress("UNCHECKED_CAST")
                 return existing.lifecycle as A
             }
 
-            // We won - install ours
+            // We won - install and start
             map[key] = Managed(atom, job, refs = 1)
+            runCatching { atom.onStart() }
             @Suppress("UNCHECKED_CAST")
             return atom
         }

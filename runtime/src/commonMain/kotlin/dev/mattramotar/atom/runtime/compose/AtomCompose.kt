@@ -97,7 +97,7 @@ inline fun <reified A : AtomLifecycle> atom(
         storeOwner.atomStore.acquire(atomKey) {
             @Suppress("UNCHECKED_CAST")
             val a = entry.createAny(scope, state, params) as A
-            a.onStart()
+            // onStart() is called by AtomStore.acquire() after installation
             a to scopeJob
         }
     }

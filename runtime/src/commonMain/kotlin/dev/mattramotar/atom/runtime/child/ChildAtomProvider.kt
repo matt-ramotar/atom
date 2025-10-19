@@ -59,9 +59,13 @@ open class ChildAtomProvider(
         val key = AtomKey(type, id)
 
         @Suppress("UNCHECKED_CAST")
-        return (children.getOrPut(key) {
-            createEntry(type, key, params)
-        }.lifecycle as A)
+        val entry = children.getOrPut(key) {
+            val newEntry = createEntry(type, key, params)
+            // Start only after successful installation
+            runCatching { newEntry.lifecycle.onStart() }
+            newEntry
+        }
+        return entry.lifecycle as A
     }
 
     suspend fun <A : AtomLifecycle> getOrCreate(type: KClass<A>, id: Any): A =
@@ -96,15 +100,14 @@ open class ChildAtomProvider(
             @Suppress("UNCHECKED_CAST") val stateClass = entry.stateClass as KClass<Any>
             val state = stateHandleFactory.create(key, stateClass, { entry.initialAny(params) }, entry.serializerAny)
             @Suppress("UNCHECKED_CAST") val atom = entry.createAny(childScope, state, params)
-            runCatching { atom.onStart() }
 
             mutex.withLock {
                 if (!children.contains(key)) {
                     children[key] = Entry(atom, childScope)
+                    // Start only after successful installation
+                    runCatching { atom.onStart() }
                 } else {
-                    // If someone else won the race, dispose the extra
-                    runCatching { atom.onStop() }
-                    runCatching { atom.onDispose() }
+                    // Lost race - cleanup without lifecycle calls (atom never started)
                     childScope.coroutineContext[Job]?.cancel()
                 }
             }
@@ -154,7 +157,7 @@ open class ChildAtomProvider(
         @Suppress("UNCHECKED_CAST")
         val atom = entry.createAny(childScope, state, params) as A
 
-        runCatching { atom.onStart() }
+        // Don't call onStart() here - caller handles it after installation
 
         return Entry(atom, childScope)
     }
