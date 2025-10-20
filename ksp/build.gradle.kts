@@ -1,6 +1,5 @@
 @file:Suppress("UnstableApiUsage")
 
-
 group = "dev.mattramotar.atom"
 version = libs.versions.atom.get()
 

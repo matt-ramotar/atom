@@ -1,0 +1,60 @@
+name: Publish Artifacts
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  publish:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'matt-ramotar/atom' }}
+    runs-on: macos-latest
+
+    strategy:
+      matrix:
+        module-config:
+          - name: "runtime"
+            version_key: "atom"
+            version_env: "ATOM_VERSION_NAME"
+            path: ":runtime"
+          - name: "ksp"
+            version_key: "atom"
+            version_env: "ATOM_VERSION_NAME"
+            path: ":ksp"
+          - name: "metro"
+            version_key: "atom"
+            version_env: "ATOM_VERSION_NAME"
+            path: ":metro"
+          - name: "gradle-plugin"
+            version_key: "atom"
+            version_env: "ATOM_VERSION_NAME"
+            path: ":gradle-plugin"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Grant execute permission for Gradlew
+        run: chmod +x gradlew
+
+      - name: Set Version Environment Variables
+        run: |
+          # Extract version from libs.versions.toml based on the version_key
+          VERSION=$(grep "^${{ matrix.module-config.version_key }} = " gradle/libs.versions.toml | sed 's/.*= "\(.*\)"/\1/')
+          echo "${{ matrix.module-config.version_env }}=$VERSION" >> $GITHUB_ENV
+          echo "Extracted version for ${{ matrix.module-config.name }}: $VERSION"          
+
+      - name: Publish Artifacts to Maven Central
+        if: ${{ !endsWith(env[matrix.module-config.version_env], '-SNAPSHOT') }}
+        run: ./gradlew ${{ matrix.module-config.path }}:publishAndReleaseToMavenCentral --no-configuration-cache
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.SONATYPE_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.SONATYPE_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
