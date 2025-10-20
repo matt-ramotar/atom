@@ -1,7 +1,7 @@
 package dev.mattramotar.atom.gradle.internal
 
-import dev.mattramotar.atom.gradle.DI
 import dev.mattramotar.atom.gradle.AtomExtension
+import dev.mattramotar.atom.gradle.DI
 import org.gradle.api.Project
 import org.gradle.api.artifacts.VersionCatalog
 import org.gradle.api.artifacts.VersionCatalogsExtension
@@ -59,7 +59,7 @@ internal object AtomDependencies {
         }
 
         // Add KSP processor for all KMP targets
-        addKspDependencyForAllTargets(project, kmpExtension, kspCoordinate(version))
+        addKspDependencyForAllTargets(project, kspCoordinate(version))
     }
 
     /**
@@ -68,22 +68,14 @@ internal object AtomDependencies {
      * This is necessary because KSP requires target-specific configurations (e.g., kspAndroid, kspJvm).
      *
      * @param project The Gradle project.
-     * @param kmpExtension The Kotlin Multiplatform extension.
      * @param dependencyNotation The dependency to add.
      */
     private fun addKspDependencyForAllTargets(
         project: Project,
-        kmpExtension: KotlinMultiplatformExtension,
         dependencyNotation: String
     ) {
         project.dependencies {
-            kmpExtension.targets.forEach { target ->
-                // Skip the common target, because KSP doesn't support it directly
-                if (target.name != "common" && target.name != "metadata") {
-                    val configName = "ksp${target.name.replaceFirstChar { it.uppercase() }}"
-                    add(configName, dependencyNotation)
-                }
-            }
+            add("kspCommonMainMetadata", dependencyNotation)
         }
     }
 }
