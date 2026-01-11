@@ -11,7 +11,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.reflect.KClass
-
+import dev.mattramotar.atom.runtime.child.ChildAtomProvider
 /**
  * Manages a dynamic collection of child atoms.
  *
@@ -95,8 +95,7 @@ open class ChildAtomProvider(
         // Create outside lock, then install under lock
         toCreate.forEach { (t, key, params) ->
             val entry = registry.entryFor(t) ?: error("No factory for ${t.simpleName}!")
-            val childScope =
-                CoroutineScope(parentScope.coroutineContext + SupervisorJob(parentScope.coroutineContext[Job]))
+            val childScope = requireChildScope()
             @Suppress("UNCHECKED_CAST") val stateClass = entry.stateClass as KClass<Any>
             val state = stateHandleFactory.create(key, stateClass, { entry.initialAny(params) }, entry.serializerAny)
             @Suppress("UNCHECKED_CAST") val atom = entry.createAny(childScope, state, params)
@@ -141,9 +140,7 @@ open class ChildAtomProvider(
             "Expected ${entry.paramsClass.simpleName} but got ${params::class.simpleName}"
         }
 
-        val childScope = CoroutineScope(
-            parentScope.coroutineContext + SupervisorJob(parentScope.coroutineContext[Job])
-        )
+        val childScope = requireChildScope()
 
         @Suppress("UNCHECKED_CAST")
         val stateClass = entry.stateClass as KClass<Any>
@@ -181,5 +178,20 @@ open class ChildAtomProvider(
             runCatching { entry.lifecycle.onDispose() }
             entry.scope.coroutineContext[Job]?.cancel()
         }
+    }
+
+    /**
+     * Creates a child scope tied to the parent's [Job].
+     *
+     * Throwing is correct here because a [CoroutineScope] without a [Job] is a programming error.
+     * Except for [kotlinx.coroutines.GlobalScope], every [CoroutineScope] should have a [Job].
+     * If the [parentScope]'s coroutine context does not have a [Job], the caller constructed [ChildAtomProvider] with an invalid scope.
+     * This is an invariant violation at the API boundary, not a recoverable runtime condition.
+     *
+     * @throws [IllegalStateException] if the [parentScope]'s coroutine context does not have a [Job].
+     */
+    private fun requireChildScope(): CoroutineScope {
+        val parentJob = checkNotNull(parentScope.coroutineContext[Job]) { "No Job in parent scope!" }
+        return CoroutineScope(parentScope.coroutineContext + SupervisorJob(parentJob))
     }
 }
