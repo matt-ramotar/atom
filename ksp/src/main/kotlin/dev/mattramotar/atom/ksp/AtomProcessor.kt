@@ -718,7 +718,8 @@ class AtomProcessor(private val env: SymbolProcessorEnvironment) : SymbolProcess
                 else -> {
                     val qualifierName = getAtomQualifierName(p)
                     if (qualifierName != null) {
-                        "dev.mattramotar.atom.runtime.di.resolve<${p.type.toTypeName()}>(container, \"$qualifierName\")"
+                        val escaped = qualifierName.replace("\\", "\\\\").replace("\"", "\\\"").replace("\$", "\\\$")
+                        "dev.mattramotar.atom.runtime.di.resolve<${p.type.toTypeName()}>(container, \"$escaped\")"
                     } else {
                         "dev.mattramotar.atom.runtime.di.resolve<${p.type.toTypeName()}>(container)"
                     }
