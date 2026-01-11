@@ -29,10 +29,10 @@ import kotlin.reflect.KClass
  *
  * ## Generated Usage
  *
- * The KSP processor generates [AtomFactoryEntry] instances via [atomFactory] builder:
+ * The KSP processor generates [AtomFactoryEntry] instances via [Atoms.factory] builder:
  *
  * ```kotlin
- * val TodoAtom_Entry = atomFactory<TodoAtom, TodoState, TodoAtomParams>(
+ * val TodoAtom_Entry = Atoms.factory<TodoAtom, TodoState, TodoAtomParams>(
  *     create = { scope, handle, params -> TodoAtom(scope, handle, params, repository) },
  *     initial = { params -> TodoAtom.initial(params) },
  *     serializer = KotlinxStateSerializer(TodoState.serializer())
@@ -118,7 +118,7 @@ import kotlin.reflect.KClass
  * @param serializer Optional state serializer
  *
  * @see AnyAtomFactoryEntry for the type-erased parent
- * @see atomFactory for the builder function used by generated code
+ * @see Atoms.factory for the builder function used by generated code
  * @see AtomFactoryRegistry for factory registration
  */
 open class AtomFactoryEntry<A : AtomLifecycle, S : Any, P : Any>(
