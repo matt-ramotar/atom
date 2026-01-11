@@ -62,7 +62,7 @@ class AtomProcessorTest {
 
     /**
      * Test: Extracts assisted parameters correctly
-     * 
+     *
      * Given: Atom constructor with scope, handle, params, and DI deps
      * When: Factory is generated
      * Then: Assisted params passed directly, DI deps resolved from container
@@ -71,6 +71,47 @@ class AtomProcessorTest {
     fun `identifies assisted vs DI parameters`() {
         // Input: constructor(scope, handle, params, repository, logger)
         // Expected: Factory resolves repository and logger from container
+    }
+
+    /**
+     * Test: Respects default values for DI parameters
+     *
+     * Given: Atom constructor with DI parameter that has a default value
+     * When: Factory is generated
+     * Then: Parameter is NOT resolved from container, Kotlin default is used
+     */
+    @Test
+    fun `respects default values for DI parameters`() {
+        // Input: constructor(scope, handle, logger: Logger = DefaultLogger())
+        // Expected: Factory create() returns Atom(scope, handle) - no logger resolution
+        // Expected: Factory constructor has no logger parameter (Metro mode)
+    }
+
+    /**
+     * Test: AtomQualifier overrides default value
+     *
+     * Given: Atom constructor with @AtomQualifier AND default value
+     * When: Factory is generated
+     * Then: Parameter IS resolved from container (qualifier wins)
+     */
+    @Test
+    fun `AtomQualifier overrides default value`() {
+        // Input: constructor(scope, handle, @AtomQualifier("analytics") logger: Logger = DefaultLogger())
+        // Expected: Factory resolves logger from container with "analytics" qualifier
+        // Expected: Factory constructor has logger parameter with @Named("analytics") (Metro mode)
+    }
+
+    /**
+     * Test: Named arguments used when defaults are skipped
+     *
+     * Given: Atom constructor with default in middle, required param after
+     * When: Factory is generated
+     * Then: Named arguments are used to skip the defaulted parameter
+     */
+    @Test
+    fun `uses named arguments when skipping defaults`() {
+        // Input: constructor(scope, handle, optional: Logger = DefaultLogger(), required: Repository)
+        // Expected: Factory returns Atom(scope, handle, required = resolvedRepository)
     }
 
     /**

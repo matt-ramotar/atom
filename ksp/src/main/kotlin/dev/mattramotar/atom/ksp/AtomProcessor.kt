@@ -214,18 +214,27 @@ class AtomProcessor(private val env: SymbolProcessorEnvironment) : SymbolProcess
         val ctorParams = ctor.parameters
         val assistedKinds = AssistedKinds(stateType, paramsType)
 
-        // Check if a container is needed (only if there are non-assisted parameters)
-        val needsContainer = ctorParams.any { !assistedKinds.isAssisted(it) }
+        // Check if a container is needed (only if there are parameters requiring DI resolution)
+        val needsContainer = ctorParams.any { requiresDIResolution(it, assistedKinds) }
 
         // Build factory constructor
         val factoryCtorBuilder = FunSpec.constructorBuilder()
         if (diFlavor == "metro") {
-            // Metro: Emit typed deps as constructor params with @Inject
-            ctorParams.filter { !assistedKinds.isAssisted(it) }.forEach { p ->
+            // Metro: Emit typed deps as constructor params with @Inject (only for params requiring DI)
+            ctorParams.filter { requiresDIResolution(it, assistedKinds) }.forEach { p ->
                 val pName = p.name?.asString() ?: "dep"
                 val pType = p.type.toTypeName()
                 val paramBuilder = ParameterSpec.builder(pName, pType)
-                // Propagate qualifier annotations if present
+                // Propagate @AtomQualifier as @Named
+                val atomQualifierName = getAtomQualifierName(p)
+                if (atomQualifierName != null) {
+                    paramBuilder.addAnnotation(
+                        AnnotationSpec.builder(ClassName("javax.inject", "Named"))
+                            .addMember("%S", atomQualifierName)
+                            .build()
+                    )
+                }
+                // Propagate other qualifier annotations if present
                 p.annotations.forEach { ann ->
                     val annDecl = ann.annotationType.resolve().declaration
                     val fqName = annDecl.qualifiedName?.asString() ?: return@forEach
@@ -250,8 +259,8 @@ class AtomProcessor(private val env: SymbolProcessorEnvironment) : SymbolProcess
             .primaryConstructor(factoryCtorBuilder.build())
 
         if (diFlavor == "metro") {
-            // Store typed deps as properties
-            ctorParams.filter { !assistedKinds.isAssisted(it) }.forEach { p ->
+            // Store typed deps as properties (only for params requiring DI)
+            ctorParams.filter { requiresDIResolution(it, assistedKinds) }.forEach { p ->
                 val pName = p.name?.asString() ?: "dep"
                 factoryTypeBuilder.addProperty(
                     PropertySpec.builder(pName, p.type.toTypeName())
@@ -684,16 +693,43 @@ class AtomProcessor(private val env: SymbolProcessorEnvironment) : SymbolProcess
         assisted: AssistedKinds,
         useTypedFactoryParams: Boolean
     ): CodeBlock {
-        val args = ctorParams.joinToString(", ") { p ->
-            when {
+        val argParts = mutableListOf<String>()
+        var hasSkippedDefault = false
+
+        ctorParams.forEach { p ->
+            val pName = p.name?.asString() ?: "dep"
+
+            // Skip parameters with defaults (unless they have @AtomQualifier)
+            val shouldSkip = !assisted.isAssisted(p) && p.hasDefault && !hasAtomQualifier(p)
+
+            if (shouldSkip) {
+                hasSkippedDefault = true
+                return@forEach
+            }
+
+            // Use named args if we've skipped a default (Kotlin requires all args to be named after a default is skipped)
+            val useNamed = hasSkippedDefault
+
+            val argValue = when {
                 assisted.isScope(p) -> "scope"
                 assisted.isHandle(p) -> "handle"
                 assisted.isParams(p) -> "params"
-                useTypedFactoryParams -> (p.name?.asString() ?: "dep")
-                else -> "dev.mattramotar.atom.runtime.di.resolve<${p.type.toTypeName()}>(container)"
+                useTypedFactoryParams -> pName
+                else -> {
+                    val qualifierName = getAtomQualifierName(p)
+                    if (qualifierName != null) {
+                        val escaped = qualifierName.replace("\\", "\\\\").replace("\"", "\\\"").replace("\$", "\\\$")
+                        "dev.mattramotar.atom.runtime.di.resolve<${p.type.toTypeName()}>(container, \"$escaped\")"
+                    } else {
+                        "dev.mattramotar.atom.runtime.di.resolve<${p.type.toTypeName()}>(container)"
+                    }
+                }
             }
+
+            argParts.add(if (useNamed) "$pName = $argValue" else argValue)
         }
-        return CodeBlock.of("return %T($args)\n", atomClass)
+
+        return CodeBlock.of("return %T(${argParts.joinToString(", ")})\n", atomClass)
     }
 
     private class AssistedKinds(private val state: TypeName, private val params: TypeName) {
@@ -703,6 +739,45 @@ class AtomProcessor(private val env: SymbolProcessorEnvironment) : SymbolProcess
 
         fun isHandle(p: KSValueParameter): Boolean = p.type.toTypeName() == state.stateHandleOf()
         fun isParams(p: KSValueParameter): Boolean = p.type.toTypeName() == params
+    }
+
+    /**
+     * Checks if a parameter has an @AtomQualifier annotation.
+     * When present, the parameter should be resolved via DI even if it has a default value.
+     */
+    private fun hasAtomQualifier(p: KSValueParameter): Boolean {
+        return p.annotations.any { ann ->
+            ann.annotationType.resolve().declaration.qualifiedName?.asString() ==
+                "dev.mattramotar.atom.runtime.annotations.AtomQualifier"
+        }
+    }
+
+    /**
+     * Extracts the name value from @AtomQualifier annotation if present.
+     */
+    private fun getAtomQualifierName(p: KSValueParameter): String? {
+        val ann = p.annotations.firstOrNull { ann ->
+            ann.annotationType.resolve().declaration.qualifiedName?.asString() ==
+                "dev.mattramotar.atom.runtime.annotations.AtomQualifier"
+        } ?: return null
+
+        return ann.arguments.firstOrNull { it.name?.asString() == "name" }?.value as? String
+    }
+
+    /**
+     * Determines if a parameter requires DI resolution.
+     * A parameter requires DI if:
+     * - It is NOT an assisted parameter (scope, handle, params)
+     * - AND either has @AtomQualifier OR does not have a default value
+     */
+    private fun requiresDIResolution(p: KSValueParameter, assistedKinds: AssistedKinds): Boolean {
+        if (assistedKinds.isAssisted(p)) return false
+
+        // @AtomQualifier explicitly requests DI resolution, even with a default
+        if (hasAtomQualifier(p)) return true
+
+        // Otherwise, require DI only if no default value
+        return !p.hasDefault
     }
 
     private fun KSClassDeclaration.isAtomSubclass(): Boolean =
