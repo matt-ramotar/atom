@@ -225,7 +225,16 @@ class AtomProcessor(private val env: SymbolProcessorEnvironment) : SymbolProcess
                 val pName = p.name?.asString() ?: "dep"
                 val pType = p.type.toTypeName()
                 val paramBuilder = ParameterSpec.builder(pName, pType)
-                // Propagate qualifier annotations if present
+                // Propagate @AtomQualifier as @Named
+                val atomQualifierName = getAtomQualifierName(p)
+                if (atomQualifierName != null) {
+                    paramBuilder.addAnnotation(
+                        AnnotationSpec.builder(ClassName("javax.inject", "Named"))
+                            .addMember("%S", atomQualifierName)
+                            .build()
+                    )
+                }
+                // Propagate other qualifier annotations if present
                 p.annotations.forEach { ann ->
                     val annDecl = ann.annotationType.resolve().declaration
                     val fqName = annDecl.qualifiedName?.asString() ?: return@forEach
@@ -706,7 +715,14 @@ class AtomProcessor(private val env: SymbolProcessorEnvironment) : SymbolProcess
                 assisted.isHandle(p) -> "handle"
                 assisted.isParams(p) -> "params"
                 useTypedFactoryParams -> pName
-                else -> "dev.mattramotar.atom.runtime.di.resolve<${p.type.toTypeName()}>(container)"
+                else -> {
+                    val qualifierName = getAtomQualifierName(p)
+                    if (qualifierName != null) {
+                        "dev.mattramotar.atom.runtime.di.resolve<${p.type.toTypeName()}>(container, \"$qualifierName\")"
+                    } else {
+                        "dev.mattramotar.atom.runtime.di.resolve<${p.type.toTypeName()}>(container)"
+                    }
+                }
             }
 
             argParts.add(if (useNamed) "$pName = $argValue" else argValue)
@@ -733,6 +749,18 @@ class AtomProcessor(private val env: SymbolProcessorEnvironment) : SymbolProcess
             ann.annotationType.resolve().declaration.qualifiedName?.asString() ==
                 "dev.mattramotar.atom.runtime.annotations.AtomQualifier"
         }
+    }
+
+    /**
+     * Extracts the name value from @AtomQualifier annotation if present.
+     */
+    private fun getAtomQualifierName(p: KSValueParameter): String? {
+        val ann = p.annotations.firstOrNull { ann ->
+            ann.annotationType.resolve().declaration.qualifiedName?.asString() ==
+                "dev.mattramotar.atom.runtime.annotations.AtomQualifier"
+        } ?: return null
+
+        return ann.arguments.firstOrNull { it.name?.asString() == "name" }?.value as? String
     }
 
     /**
