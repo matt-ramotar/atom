@@ -698,8 +698,8 @@ class AtomProcessor(private val env: SymbolProcessorEnvironment) : SymbolProcess
                 return@forEach
             }
 
-            // Use named args if we've skipped a default and this is a DI param
-            val useNamed = hasSkippedDefault && !assisted.isAssisted(p)
+            // Use named args if we've skipped a default (Kotlin requires all args to be named after a default is skipped)
+            val useNamed = hasSkippedDefault
 
             val argValue = when {
                 assisted.isScope(p) -> "scope"
