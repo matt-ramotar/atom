@@ -6,6 +6,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import dev.mattramotar.atom.runtime.AtomKey
 import dev.mattramotar.atom.runtime.AtomLifecycle
+import dev.mattramotar.atom.runtime.factory.AtomFactoryRegistry
+import dev.mattramotar.atom.runtime.state.StateHandleFactory
+import dev.mattramotar.atom.runtime.store.AtomStoreOwner
 import kotlinx.coroutines.*
 
 /**
@@ -68,8 +71,17 @@ inline fun <reified A : AtomLifecycle> atom(
     val registry = LocalAtomFactories.current
     val handles = LocalStateHandleFactory.current
     val parentScope = rememberCoroutineScope()
-    val atomKey = remember(type, key, params) {
-        AtomKey(type, AtomParamsKey(instanceKey = key, params = params))
+    val atomKey = remember(type, key, params, storeOwner, registry, handles) {
+        AtomKey(
+            type,
+            AtomParamsKey(
+                instanceKey = key,
+                params = params,
+                storeOwner = storeOwner,
+                registry = registry,
+                stateHandleFactory = handles
+            )
+        )
     }
 
     val instance = remember(atomKey) {
@@ -130,5 +142,8 @@ inline fun <reified A : AtomLifecycle> atom(
 @PublishedApi
 internal data class AtomParamsKey(
     val instanceKey: Any?,
-    val params: Any
+    val params: Any,
+    val storeOwner: AtomStoreOwner,
+    val registry: AtomFactoryRegistry,
+    val stateHandleFactory: StateHandleFactory
 )
