@@ -38,7 +38,14 @@ class AtomStore {
      * @property job The atom's coroutine job (to be cancelled by the owner on dispose)
      * @property refs Current reference count
      */
-    data class Managed(val lifecycle: AtomLifecycle, val job: Job?, var refs: Int)
+    data class Managed(
+        val lifecycle: AtomLifecycle,
+        val job: Job?,
+        var refs: Int
+    ) {
+        internal val startLock = Lock()
+        internal var startError: Throwable? = null
+    }
 
     private val map = LinkedHashMap<AtomKey, Managed>()
     private val lock = Lock()
@@ -60,48 +67,84 @@ class AtomStore {
         create: () -> Pair<A, Job?>
     ): A {
         // Fast path: check cache without creating
+        var existing: Managed? = null
         lock.withLock {
-            val existing = map[key]
-            if (existing != null) {
-                existing.refs++
-                return existing.lifecycle as A
+            val cached = map[key]
+            if (cached != null) {
+                cached.refs++
+                existing = cached
             }
+        }
+        if (existing != null) {
+            awaitStart(key, existing)
+            @Suppress("UNCHECKED_CAST")
+            return existing.lifecycle as A
         }
 
         // Slow path: create outside lock
         val (atom, job) = create()
+        val managed = Managed(atom, job, refs = 1)
+        var isWinner = false
+        var winner: Managed? = null
 
-        // Install with double-check
-        lock.withLock {
-            val existing = map[key]
-            if (existing != null) {
-                // Lost race - use existing, cleanup discarded atom
-                existing.refs++
-                // Cancel job but skip lifecycle calls (atom was never "started" by store)
-                job?.cancel()
-                return existing.lifecycle as A
-            }
-
-            // We won - install
-            map[key] = Managed(atom, job, refs = 1)
-        }
-
-        try {
-            atom.onStart()
-        } catch (t: Throwable) {
+        managed.startLock.withLock {
             lock.withLock {
-                val existing = map[key]
-                if (existing?.lifecycle == atom) {
-                    map.remove(key)
+                val cached = map[key]
+                if (cached != null) {
+                    cached.refs++
+                    winner = cached
+                } else {
+                    map[key] = managed
+                    winner = managed
+                    isWinner = true
                 }
             }
+
+            if (!isWinner) return@withLock
+
+            try {
+                atom.onStart()
+            } catch (t: Throwable) {
+                managed.startError = t
+                lock.withLock {
+                    if (map[key] === managed) {
+                        map.remove(key)
+                    }
+                }
+                job?.cancel()
+                runCatching { atom.onStop() }
+                runCatching { atom.onDispose() }
+                throw t
+            }
+        }
+
+        if (!isWinner) {
             job?.cancel()
-            runCatching { atom.onStop() }
-            runCatching { atom.onDispose() }
-            throw t
+            val existingWinner = requireNotNull(winner)
+            awaitStart(key, existingWinner)
+            @Suppress("UNCHECKED_CAST")
+            return existingWinner.lifecycle as A
         }
 
         return atom
+    }
+
+    private fun awaitStart(key: AtomKey, managed: Managed) {
+        try {
+            managed.startLock.withLock {
+                managed.startError?.let { throw it }
+            }
+        } catch (t: Throwable) {
+            lock.withLock {
+                if (map[key] === managed) {
+                    managed.refs--
+                    if (managed.refs <= 0) {
+                        map.remove(key)
+                    }
+                }
+            }
+            throw t
+        }
     }
 
     /**

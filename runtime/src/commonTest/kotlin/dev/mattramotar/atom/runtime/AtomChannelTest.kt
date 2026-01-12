@@ -8,6 +8,7 @@ import dev.mattramotar.atom.runtime.state.InMemoryStateHandle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
@@ -15,6 +16,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -114,6 +116,42 @@ class AtomChannelTest {
         assertEquals(2, atom.get().count)
         atom.onStop()
         runCurrent()
+    }
+
+    @Test
+    fun invalidEventChannelConfigThrows() = runTest {
+        val config = AtomChannelConfig(
+            events = AtomChannelConfig.ChannelConfig(
+                capacity = Channel.RENDEZVOUS,
+                onBufferOverflow = BufferOverflow.DROP_OLDEST
+            )
+        )
+
+        assertFailsWith<IllegalArgumentException> {
+            TestAtom(
+                scope = CoroutineScope(coroutineContext),
+                handle = InMemoryStateHandle(TestState()),
+                channelConfig = config
+            )
+        }
+    }
+
+    @Test
+    fun invalidEffectChannelConfigThrows() = runTest {
+        val config = AtomChannelConfig(
+            effects = AtomChannelConfig.ChannelConfig(
+                capacity = Channel.RENDEZVOUS,
+                onBufferOverflow = BufferOverflow.DROP_LATEST
+            )
+        )
+
+        assertFailsWith<IllegalArgumentException> {
+            TestAtom(
+                scope = CoroutineScope(coroutineContext),
+                handle = InMemoryStateHandle(TestState()),
+                channelConfig = config
+            )
+        }
     }
 
     private object TestIntent : Intent

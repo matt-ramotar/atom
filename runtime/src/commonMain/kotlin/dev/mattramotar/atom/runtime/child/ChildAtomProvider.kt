@@ -47,7 +47,10 @@ open class ChildAtomProvider(
     private data class Entry(
         val lifecycle: AtomLifecycle,
         val scope: CoroutineScope,
-        val startSignal: CompletableDeferred<Unit> = CompletableDeferred()
+        val startSignal: CompletableDeferred<Unit> = CompletableDeferred(),
+        val lifecycleMutex: Mutex = Mutex(),
+        var started: Boolean = false,
+        var disposed: Boolean = false
     )
 
     private val children = mutableMapOf<AtomKey, Entry>()
@@ -111,7 +114,9 @@ open class ChildAtomProvider(
         }
 
         // Dispose outside lock
-        toDispose.forEach { entry -> disposeEntry(entry) }
+        for (entry in toDispose) {
+            disposeEntry(entry)
+        }
 
         // Create outside lock, then install under lock
         toCreate.forEach { (t, key, params) ->
@@ -191,14 +196,18 @@ open class ChildAtomProvider(
         return Entry(atom, childScope)
     }
 
-    private fun disposeEntry(entry: Entry) {
-        entry.scope.coroutineContext[Job]?.cancel()
-        runCatching { entry.lifecycle.onStop() }
-        runCatching { entry.lifecycle.onDispose() }
-        if (!entry.startSignal.isCompleted) {
-            entry.startSignal.completeExceptionally(
-                CancellationException("Child atom disposed before start.")
-            )
+    private suspend fun disposeEntry(entry: Entry) {
+        entry.lifecycleMutex.withLock {
+            entry.disposed = true
+            entry.scope.coroutineContext[Job]?.cancel()
+            if (entry.started) {
+                runCatching { entry.lifecycle.onStop() }
+                runCatching { entry.lifecycle.onDispose() }
+            } else if (!entry.startSignal.isCompleted) {
+                entry.startSignal.completeExceptionally(
+                    CancellationException("Child atom disposed before start.")
+                )
+            }
         }
     }
 
@@ -208,14 +217,34 @@ open class ChildAtomProvider(
             children.clear()
             values
         }
-        toDispose.forEach { entry ->
+        for (entry in toDispose) {
             disposeEntry(entry)
         }
     }
 
     private suspend fun startEntry(key: AtomKey, entry: Entry) {
         if (entry.startSignal.isCompleted) return
-        val failure = runCatching { entry.lifecycle.onStart() }.exceptionOrNull()
+        var failure: Throwable? = null
+        entry.lifecycleMutex.withLock {
+            if (entry.disposed) {
+                if (!entry.startSignal.isCompleted) {
+                    entry.startSignal.completeExceptionally(
+                        CancellationException("Child atom disposed before start.")
+                    )
+                }
+                return
+            }
+
+            failure = runCatching { entry.lifecycle.onStart() }.exceptionOrNull()
+            if (failure == null) {
+                entry.started = true
+                entry.startSignal.complete(Unit)
+            } else if (!entry.startSignal.isCompleted) {
+                entry.disposed = true
+                entry.startSignal.completeExceptionally(failure as Throwable)
+            }
+        }
+
         if (failure != null) {
             entry.scope.coroutineContext[Job]?.cancel()
             runCatching { entry.lifecycle.onStop() }
@@ -225,11 +254,8 @@ open class ChildAtomProvider(
                     children.remove(key)
                 }
             }
-            entry.startSignal.completeExceptionally(failure)
-            throw failure
+            throw failure as Throwable
         }
-
-        entry.startSignal.complete(Unit)
     }
 
     /**

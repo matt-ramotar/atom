@@ -297,15 +297,17 @@ abstract class Atom<S : Any, I : Intent, E : Event, F : SideEffect>(
      */
     override fun onStart() {
         ensureChannelsOpen()
+        val eventsChannel = events
+        val effectsChannel = _effects
         scope.launch {
-            for (event in events) {
+            for (event in eventsChannel) {
                 val current = handle.get()
                 val (next, fx) = reduce(current, event)
                 if (next != current) handle.set(next)
                 for (effect in fx) {
-                    if (_effects.isClosedForSend) break
+                    if (effectsChannel.isClosedForSend) break
                     try {
-                        _effects.send(effect)
+                        effectsChannel.send(effect)
                     } catch (e: ClosedSendChannelException) {
                         break
                     }
@@ -385,7 +387,9 @@ abstract class Atom<S : Any, I : Intent, E : Event, F : SideEffect>(
     }
 
     private fun newEventsChannel() = Channel<E>(
-        capacity = channelConfig.events.capacity,
+        capacity = channelConfig.events.capacity.also {
+            validateChannelConfig("Event", channelConfig.events)
+        },
         onBufferOverflow = channelConfig.events.onBufferOverflow,
     )
 
@@ -393,10 +397,31 @@ abstract class Atom<S : Any, I : Intent, E : Event, F : SideEffect>(
         require(channelConfig.effects.capacity != Channel.UNLIMITED) {
             "Effect channel must be bounded. Configure a capacity and overflow policy."
         }
+        validateChannelConfig("Effect", channelConfig.effects)
         return Channel(
             capacity = channelConfig.effects.capacity,
             onBufferOverflow = channelConfig.effects.onBufferOverflow,
         )
+    }
+
+    private fun validateChannelConfig(
+        label: String,
+        config: AtomChannelConfig.ChannelConfig
+    ) {
+        val capacity = config.capacity
+        val overflow = config.onBufferOverflow
+        if (capacity == Channel.RENDEZVOUS || capacity == Channel.UNLIMITED || capacity == Channel.CONFLATED) {
+            require(overflow == BufferOverflow.SUSPEND) {
+                "$label channel with capacity $capacity requires SUSPEND overflow."
+            }
+            return
+        }
+
+        if (overflow != BufferOverflow.SUSPEND) {
+            require(capacity > 0) {
+                "$label channel with overflow $overflow requires positive buffer capacity."
+            }
+        }
     }
 
     /**
