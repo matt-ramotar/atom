@@ -117,6 +117,7 @@ class AtomComposeTest {
         }
     }
 
+
     @Test
     fun atomDoesNotCreateStateHandleOnCacheHit() = runTest {
         val created = mutableListOf<TestAtom>()
@@ -160,6 +161,155 @@ class AtomComposeTest {
         }
     }
 
+    @Test
+    fun atomRecreatesAndDisposesWhenStoreOwnerChanges() = runTest {
+        val created = mutableListOf<TestAtom>()
+        val ownerState = mutableStateOf(testOwner())
+        val nextOwner = testOwner()
+        val observedAtom = mutableStateOf<TestAtom?>(null)
+        val registry = testRegistry(created)
+
+        runComposition(
+            content = {
+                AtomCompositionLocals(factories = registry, owner = ownerState.value) {
+                    val atom = atom<TestAtom>(key = "id", params = TestParams("stable"))
+                    SideEffect { observedAtom.value = atom }
+                }
+            }
+        ) { frameClock ->
+            frameClock.advance()
+
+            val first = requireNotNull(observedAtom.value)
+            assertEquals(1, created.size)
+            assertEquals(1, first.starts)
+            assertEquals(0, first.stops)
+            assertEquals(0, first.disposes)
+
+            ownerState.value = nextOwner
+            Snapshot.sendApplyNotifications()
+            frameClock.advance()
+
+            val second = requireNotNull(observedAtom.value)
+            assertNotSame(first, second)
+            assertEquals(2, created.size)
+            assertEquals(1, first.stops)
+            assertEquals(1, first.disposes)
+            assertEquals(1, second.starts)
+            assertEquals(0, second.stops)
+            assertEquals(0, second.disposes)
+        }
+    }
+
+    @Test
+    fun atomRecreatesWhenRegistryChanges() = runTest {
+        val createdFirst = mutableListOf<TestAtom>()
+        val createdSecond = mutableListOf<TestAtom>()
+        val firstRegistry = testRegistry(createdFirst)
+        val secondRegistry = testRegistry(createdSecond)
+        val registryState = mutableStateOf<AtomFactoryRegistry>(firstRegistry)
+        val owner = testOwner()
+        val observedAtom = mutableStateOf<TestAtom?>(null)
+
+        runComposition(
+            content = {
+                AtomCompositionLocals(factories = registryState.value, owner = owner) {
+                    val atom = atom<TestAtom>(key = "id", params = TestParams("stable"))
+                    SideEffect { observedAtom.value = atom }
+                }
+            }
+        ) { frameClock ->
+            frameClock.advance()
+
+            val first = requireNotNull(observedAtom.value)
+            assertEquals(1, createdFirst.size)
+            assertEquals(0, createdSecond.size)
+            assertEquals(1, first.starts)
+
+            registryState.value = secondRegistry
+            Snapshot.sendApplyNotifications()
+            frameClock.advance()
+
+            val second = requireNotNull(observedAtom.value)
+            assertNotSame(first, second)
+            assertEquals(1, createdFirst.size)
+            assertEquals(1, createdSecond.size)
+            assertEquals(1, first.stops)
+            assertEquals(1, first.disposes)
+            assertEquals(1, second.starts)
+            assertEquals(0, second.stops)
+            assertEquals(0, second.disposes)
+        }
+    }
+
+    @Test
+    fun atomRecreatesWhenStateHandleFactoryChanges() = runTest {
+        val created = mutableListOf<TestAtom>()
+        val registry = testRegistry(created)
+        val owner = testOwner()
+        val stateHandlesFirst = object : StateHandleFactory {
+            var creates = 0
+
+            override fun <S : Any> create(
+                key: AtomKey,
+                stateClass: KClass<S>,
+                initial: () -> S,
+                serializer: StateSerializer<S>?
+            ): StateHandle<S> {
+                creates += 1
+                return InMemoryStateHandleFactory.create(key, stateClass, initial, serializer)
+            }
+        }
+        val stateHandlesSecond = object : StateHandleFactory {
+            var creates = 0
+
+            override fun <S : Any> create(
+                key: AtomKey,
+                stateClass: KClass<S>,
+                initial: () -> S,
+                serializer: StateSerializer<S>?
+            ): StateHandle<S> {
+                creates += 1
+                return InMemoryStateHandleFactory.create(key, stateClass, initial, serializer)
+            }
+        }
+        val handlesState = mutableStateOf<StateHandleFactory>(stateHandlesFirst)
+        val observedAtom = mutableStateOf<TestAtom?>(null)
+
+        runComposition(
+            content = {
+                AtomCompositionLocals(
+                    factories = registry,
+                    owner = owner,
+                    stateHandles = handlesState.value
+                ) {
+                    val atom = atom<TestAtom>(key = "id", params = TestParams("stable"))
+                    SideEffect { observedAtom.value = atom }
+                }
+            }
+        ) { frameClock ->
+            frameClock.advance()
+
+            val first = requireNotNull(observedAtom.value)
+            assertEquals(1, created.size)
+            assertEquals(1, stateHandlesFirst.creates)
+            assertEquals(0, stateHandlesSecond.creates)
+
+            handlesState.value = stateHandlesSecond
+            Snapshot.sendApplyNotifications()
+            frameClock.advance()
+
+            val second = requireNotNull(observedAtom.value)
+            assertNotSame(first, second)
+            assertEquals(2, created.size)
+            assertEquals(1, stateHandlesFirst.creates)
+            assertEquals(1, stateHandlesSecond.creates)
+            assertEquals(1, first.stops)
+            assertEquals(1, first.disposes)
+            assertEquals(1, second.starts)
+            assertEquals(0, second.stops)
+            assertEquals(0, second.disposes)
+        }
+    }
     private suspend fun TestScope.runComposition(
         content: @Composable () -> Unit,
         block: suspend (FrameClockDriver) -> Unit
