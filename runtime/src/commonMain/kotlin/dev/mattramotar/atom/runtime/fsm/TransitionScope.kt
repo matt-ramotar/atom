@@ -29,6 +29,9 @@ package dev.mattramotar.atom.runtime.fsm
  *     }))
  * }
  * ```
+ *
+ * Guard evaluation stops at the first matching handler. If the guard fails, no other handlers
+ * are considered and the state is left unchanged.
  */
 class TransitionScope<S : Any, E : Event, F : SideEffect> {
     @PublishedApi

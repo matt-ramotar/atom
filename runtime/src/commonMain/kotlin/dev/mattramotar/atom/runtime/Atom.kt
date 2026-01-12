@@ -217,20 +217,20 @@ import kotlinx.coroutines.launch
  * - **State updates**: Serialized through the event channel - no race conditions
  * - **Intent calls**: Thread-safe - can be called from any thread
  * - **Effect emissions**: Serialized - effects are emitted in order
- * - **Coroutine scope**: Automatically cancelled on [onStop]
+ * - **Coroutine scope**: Cancelled by the owner before [onStopInternal] and [onDisposeInternal]
  *
  * ## Lifecycle and Scope
  *
  * The atom's [scope] is a supervised coroutine scope:
  * - Child coroutines are launched in this scope
- * - Scope is automatically cancelled when the atom is stopped
+ * - Scope is cancelled by the store owner when the atom is stopped
  * - Cancellation propagates to all child coroutines
  *
  * @param S State type, subtype of [Any].
  * @param I [Intent] type.
  * @param E [Event] type.
  * @param F [SideEffect] type.
- * @param scope The coroutine scope for this atom. Automatically cancelled on [onStop].
+ * @param scope The coroutine scope for this atom. Cancelled by the owner before [onStopInternal].
  * @param handle The state container for this atom. Provides state persistence and observation.
  * @param channelConfig Channel configuration for event/effect backpressure behavior.
  *

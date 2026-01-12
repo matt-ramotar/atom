@@ -136,13 +136,13 @@ package dev.mattramotar.atom.runtime
  * - **First acquisition**: `refs = 0 -> 1` → [onStart] called
  * - **Subsequent acquisitions**: `refs = 1 -> 2` → no callback
  * - **Release**: `refs = 2 -> 1` → no callback
- * - **Last release**: `refs = 1 -> 0` → [onStop] then [onDispose] called
+ * - **Last release**: `refs = 1 -> 0` → entry returned for [onStop]/[onDispose] by the owner
  *
  * ## Thread Safety
  *
  * - [onStart], [onStop], and [onDispose] may be called from different threads
  * - The runtime serializes lifecycle callbacks - no concurrent invocations
- * - Callbacks are called with the atom's internal lock held (brief operations only)
+ * - Callbacks are invoked outside internal locks
  *
  * ## Default Implementations
  *
@@ -162,8 +162,8 @@ interface AtomLifecycle {
      * **Threading**: Called on the thread that acquires the atom (typically main thread in Compose).
      * Launch coroutines in the atom's `scope` for asynchronous initialization.
      *
-     * **Error Handling**: Exceptions thrown from [onStart] are not caught by the runtime.
-     * Ensure robust error handling to prevent crashes.
+     * **Error Handling**: Exceptions thrown from [onStart] propagate to the caller. The runtime
+     * removes the entry and cancels its job to avoid retaining a partially started atom.
      */
     fun onStart() {}
 
@@ -175,7 +175,7 @@ interface AtomLifecycle {
      *
      * **Threading**: Called on the thread that releases the last reference.
      *
-     * **Error Handling**: Exceptions are caught and logged by the runtime to prevent disposal failures.
+     * **Error Handling**: Exceptions are caught and ignored by the runtime to prevent disposal failures.
      */
     fun onStop() {}
 
@@ -187,7 +187,7 @@ interface AtomLifecycle {
      *
      * **Threading**: Called on the thread that released the last reference, after [onStop].
      *
-     * **Error Handling**: Exceptions are caught and logged. Use `runCatching` for defensive cleanup.
+     * **Error Handling**: Exceptions are caught and ignored. Use `runCatching` for defensive cleanup.
      */
     fun onDispose() {}
 }
