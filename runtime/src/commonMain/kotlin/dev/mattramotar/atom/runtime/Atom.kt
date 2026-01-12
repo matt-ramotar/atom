@@ -247,15 +247,6 @@ abstract class Atom<S : Any, I : Intent, E : Event, F : SideEffect>(
 ) : AtomLifecycle {
     private val scopeJob = scope.coroutineContext[Job]
 
-    init {
-        require(channelConfig.effects.capacity != Channel.UNLIMITED) {
-            "Effect channel must be bounded. Configure a capacity and overflow policy."
-        }
-
-        scopeJob?.invokeOnCompletion {
-            closeChannels()
-        }
-    }
     /**
      * Observable state flow for reactive UI updates.
      *
@@ -271,10 +262,7 @@ abstract class Atom<S : Any, I : Intent, E : Event, F : SideEffect>(
      * by the reducer. This ensures state updates are serialized and race-free.
      * Capacity and overflow behavior are configured via [AtomChannelConfig].
      */
-    private val events = Channel<E>(
-        capacity = channelConfig.events.capacity,
-        onBufferOverflow = channelConfig.events.onBufferOverflow,
-    )
+    private var events = newEventsChannel()
 
     /**
      * Internal effect channel for side effect emissions.
@@ -282,10 +270,13 @@ abstract class Atom<S : Any, I : Intent, E : Event, F : SideEffect>(
      * Effects emitted by the reducer are queued in this channel for asynchronous handling.
      * Capacity and overflow behavior are configured via [AtomChannelConfig].
      */
-    private val _effects = Channel<F>(
-        capacity = channelConfig.effects.capacity,
-        onBufferOverflow = channelConfig.effects.onBufferOverflow,
-    )
+    private var _effects = newEffectsChannel()
+
+    init {
+        scopeJob?.invokeOnCompletion {
+            closeChannels()
+        }
+    }
 
     /**
      * Observable flow of side effects emitted by the reducer.
@@ -293,7 +284,8 @@ abstract class Atom<S : Any, I : Intent, E : Event, F : SideEffect>(
      * Collect this flow to handle async operations like network requests, database writes,
      * analytics events, etc.
      */
-    val effects: Flow<F> = _effects.receiveAsFlow()
+    val effects: Flow<F>
+        get() = _effects.receiveAsFlow()
 
     /**
      * Starts the event processing loop when the atom becomes active.
@@ -304,6 +296,7 @@ abstract class Atom<S : Any, I : Intent, E : Event, F : SideEffect>(
      * This method is called by the runtime when the atom is first acquired.
      */
     override fun onStart() {
+        ensureChannelsOpen()
         scope.launch {
             for (event in events) {
                 val current = handle.get()
@@ -380,6 +373,30 @@ abstract class Atom<S : Any, I : Intent, E : Event, F : SideEffect>(
     private fun closeChannels() {
         events.close()
         _effects.close()
+    }
+
+    private fun ensureChannelsOpen() {
+        if (events.isClosedForSend) {
+            events = newEventsChannel()
+        }
+        if (_effects.isClosedForSend) {
+            _effects = newEffectsChannel()
+        }
+    }
+
+    private fun newEventsChannel() = Channel<E>(
+        capacity = channelConfig.events.capacity,
+        onBufferOverflow = channelConfig.events.onBufferOverflow,
+    )
+
+    private fun newEffectsChannel(): Channel<F> {
+        require(channelConfig.effects.capacity != Channel.UNLIMITED) {
+            "Effect channel must be bounded. Configure a capacity and overflow policy."
+        }
+        return Channel(
+            capacity = channelConfig.effects.capacity,
+            onBufferOverflow = channelConfig.effects.onBufferOverflow,
+        )
     }
 
     /**

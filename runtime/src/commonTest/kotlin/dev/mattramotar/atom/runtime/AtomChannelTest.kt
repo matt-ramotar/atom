@@ -94,6 +94,28 @@ class AtomChannelTest {
         job.cancel()
     }
 
+    @Test
+    fun atomCanRestartAfterStop() = runTest {
+        val atom = TestAtom(
+            scope = CoroutineScope(coroutineContext),
+            handle = InMemoryStateHandle(TestState())
+        )
+        atom.onStart()
+        atom.emit(listOf(TestEffect(1)))
+        runCurrent()
+        assertEquals(1, atom.get().count)
+
+        atom.onStop()
+        runCurrent()
+        atom.onStart()
+        atom.emit(listOf(TestEffect(2)))
+        runCurrent()
+
+        assertEquals(2, atom.get().count)
+        atom.onStop()
+        runCurrent()
+    }
+
     private object TestIntent : Intent
 
     private data class TestState(val count: Int = 0)
