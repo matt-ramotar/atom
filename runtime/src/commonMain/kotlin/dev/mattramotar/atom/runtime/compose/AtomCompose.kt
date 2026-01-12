@@ -84,23 +84,24 @@ inline fun <reified A : AtomLifecycle> atom(
         }
 
         val parentJob = checkNotNull(parentScope.coroutineContext[Job]) { "No Job in parent scope!" }
-        val scopeJob = SupervisorJob(parentJob)
-        val keyName = key?.let { "[$it]" } ?: ""
-        val scope = CoroutineScope(
-            parentScope.coroutineContext + scopeJob + CoroutineName("Atom:${type.simpleName}$keyName")
-        )
-
-        @Suppress("UNCHECKED_CAST")
-        val stateClass = entry.stateClass as kotlin.reflect.KClass<Any>
-
-        val state = handles.create(
-            key = atomKey,
-            stateClass = stateClass,
-            initial = { entry.initialAny(params) },
-            serializer = entry.serializerAny
-        )
 
         storeOwner.atomStore.acquire(atomKey) {
+            val scopeJob = SupervisorJob(parentJob)
+            val keyName = key?.let { "[$it]" } ?: ""
+            val scope = CoroutineScope(
+                parentScope.coroutineContext + scopeJob + CoroutineName("Atom:${type.simpleName}$keyName")
+            )
+
+            @Suppress("UNCHECKED_CAST")
+            val stateClass = entry.stateClass as kotlin.reflect.KClass<Any>
+
+            val state = handles.create(
+                key = atomKey,
+                stateClass = stateClass,
+                initial = { entry.initialAny(params) },
+                serializer = entry.serializerAny
+            )
+
             @Suppress("UNCHECKED_CAST")
             val a = entry.createAny(scope, state, params) as A
             // onStart() is called by AtomStore.acquire() after installation

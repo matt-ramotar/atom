@@ -9,9 +9,14 @@ import androidx.compose.runtime.Recomposer
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
+import dev.mattramotar.atom.runtime.AtomKey
 import dev.mattramotar.atom.runtime.AtomLifecycle
 import dev.mattramotar.atom.runtime.factory.AtomFactoryRegistry
 import dev.mattramotar.atom.runtime.factory.Atoms
+import dev.mattramotar.atom.runtime.serialization.StateSerializer
+import dev.mattramotar.atom.runtime.state.InMemoryStateHandleFactory
+import dev.mattramotar.atom.runtime.state.StateHandle
+import dev.mattramotar.atom.runtime.state.StateHandleFactory
 import dev.mattramotar.atom.runtime.store.AtomStore
 import dev.mattramotar.atom.runtime.store.AtomStoreOwner
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -109,6 +114,49 @@ class AtomComposeTest {
             assertEquals(1, first.starts)
             assertEquals(0, first.stops)
             assertEquals(0, first.disposes)
+        }
+    }
+
+    @Test
+    fun atomDoesNotCreateStateHandleOnCacheHit() = runTest {
+        val created = mutableListOf<TestAtom>()
+        val observedFirst = mutableStateOf<TestAtom?>(null)
+        val observedSecond = mutableStateOf<TestAtom?>(null)
+        val registry = testRegistry(created)
+        val owner = testOwner()
+        val stateHandles = object : StateHandleFactory {
+            var creates = 0
+
+            override fun <S : Any> create(
+                key: AtomKey,
+                stateClass: KClass<S>,
+                initial: () -> S,
+                serializer: StateSerializer<S>?
+            ): StateHandle<S> {
+                creates += 1
+                return InMemoryStateHandleFactory.create(key, stateClass, initial, serializer)
+            }
+        }
+
+        runComposition(
+            content = {
+                AtomCompositionLocals(factories = registry, owner = owner, stateHandles = stateHandles) {
+                    val first = atom<TestAtom>(key = "id", params = TestParams("stable"))
+                    val second = atom<TestAtom>(key = "id", params = TestParams("stable"))
+                    SideEffect {
+                        observedFirst.value = first
+                        observedSecond.value = second
+                    }
+                }
+            }
+        ) { frameClock ->
+            frameClock.advance()
+
+            val first = requireNotNull(observedFirst.value)
+            val second = requireNotNull(observedSecond.value)
+            assertSame(first, second)
+            assertEquals(1, created.size)
+            assertEquals(1, stateHandles.creates)
         }
     }
 
