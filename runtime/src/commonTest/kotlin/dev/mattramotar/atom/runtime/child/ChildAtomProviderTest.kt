@@ -86,11 +86,10 @@ class ChildAtomProviderTest {
 
     @Test
     fun concurrentSyncGetOrCreateAndClearIsSafe() = runTest {
-        val log = CallLog()
         val provider = ChildAtomProvider(
             parentScope = CoroutineScope(coroutineContext),
             stateHandleFactory = InMemoryStateHandleFactory,
-            registry = testRegistry(log)
+            registry = testRegistryNoLog()
         )
         val errors = mutableListOf<Throwable>()
         val errorMutex = Mutex()
@@ -107,7 +106,7 @@ class ChildAtomProviderTest {
                 val id = "id-${index % 3}"
                 launch(Dispatchers.Default) {
                     try {
-                        provider.getOrCreate(TestChildAtom::class, id, TestParams(id))
+                        provider.getOrCreate(NoopChildAtom::class, id, TestParams(id))
                     } catch (t: Throwable) {
                         recordError(t)
                     }
@@ -115,7 +114,7 @@ class ChildAtomProviderTest {
                 launch(Dispatchers.Default) {
                     try {
                         provider.sync(
-                            TestChildAtom::class,
+                            NoopChildAtom::class,
                             mapOf(id to TestParams(id))
                         )
                     } catch (t: Throwable) {
@@ -172,6 +171,8 @@ class ChildAtomProviderTest {
         }
     }
 
+    private class NoopChildAtom : AtomLifecycle
+
     private fun testRegistry(log: CallLog): AtomFactoryRegistry {
         val entry = Atoms.factory<TestChildAtom, TestState, TestParams>(
             create = { scope, _, params ->
@@ -183,6 +184,20 @@ class ChildAtomProviderTest {
         return object : AtomFactoryRegistry {
             override fun entryFor(type: KClass<out AtomLifecycle>) =
                 if (type == TestChildAtom::class) entry else null
+        }
+    }
+
+    private fun testRegistryNoLog(): AtomFactoryRegistry {
+        val entry = Atoms.factory<NoopChildAtom, TestState, TestParams>(
+            create = { _, _, _ ->
+                NoopChildAtom()
+            },
+            initial = { TestState() }
+        )
+
+        return object : AtomFactoryRegistry {
+            override fun entryFor(type: KClass<out AtomLifecycle>) =
+                if (type == NoopChildAtom::class) entry else null
         }
     }
 }
