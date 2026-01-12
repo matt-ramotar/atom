@@ -4,8 +4,14 @@ import dev.mattramotar.atom.runtime.AtomLifecycle
 import dev.mattramotar.atom.runtime.factory.AtomFactoryRegistry
 import dev.mattramotar.atom.runtime.factory.Atoms
 import dev.mattramotar.atom.runtime.state.InMemoryStateHandleFactory
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
 import kotlin.reflect.KClass
 import kotlin.test.Test
@@ -76,6 +82,60 @@ class ChildAtomProviderTest {
         assertTrue(log.stopJobActive.all { !it })
         assertTrue(log.disposeJobActive.all { !it })
         provider.clear()
+    }
+
+    @Test
+    fun concurrentSyncGetOrCreateAndClearIsSafe() = runTest {
+        val log = CallLog()
+        val provider = ChildAtomProvider(
+            parentScope = CoroutineScope(coroutineContext),
+            stateHandleFactory = InMemoryStateHandleFactory,
+            registry = testRegistry(log)
+        )
+        val errors = mutableListOf<Throwable>()
+        val errorMutex = Mutex()
+
+        suspend fun recordError(t: Throwable) {
+            if (t is CancellationException) return
+            errorMutex.withLock {
+                errors += t
+            }
+        }
+
+        supervisorScope {
+            repeat(30) { index ->
+                val id = "id-${index % 3}"
+                launch(Dispatchers.Default) {
+                    try {
+                        provider.getOrCreate(TestChildAtom::class, id, TestParams(id))
+                    } catch (t: Throwable) {
+                        recordError(t)
+                    }
+                }
+                launch(Dispatchers.Default) {
+                    try {
+                        provider.sync(
+                            TestChildAtom::class,
+                            mapOf(id to TestParams(id))
+                        )
+                    } catch (t: Throwable) {
+                        recordError(t)
+                    }
+                }
+                if (index % 5 == 0) {
+                    launch(Dispatchers.Default) {
+                        try {
+                            provider.clear()
+                        } catch (t: Throwable) {
+                            recordError(t)
+                        }
+                    }
+                }
+            }
+        }
+
+        provider.clear()
+        assertTrue(errors.isEmpty(), "Unexpected errors: $errors")
     }
 
     private data class TestParams(val id: String)

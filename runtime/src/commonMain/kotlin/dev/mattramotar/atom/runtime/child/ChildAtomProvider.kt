@@ -246,14 +246,14 @@ open class ChildAtomProvider(
         }
 
         if (failure != null) {
-            entry.scope.coroutineContext[Job]?.cancel()
-            runCatching { entry.lifecycle.onStop() }
-            runCatching { entry.lifecycle.onDispose() }
             mutex.withLock {
                 if (children[key] === entry) {
                     children.remove(key)
                 }
             }
+            entry.scope.coroutineContext[Job]?.cancel()
+            runCatching { entry.lifecycle.onStop() }
+            runCatching { entry.lifecycle.onDispose() }
             throw failure as Throwable
         }
     }
