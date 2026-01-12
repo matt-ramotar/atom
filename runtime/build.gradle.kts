@@ -25,4 +25,7 @@ kotlin {
 
 android {
     namespace = "dev.mattramotar.atom.runtime"
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
