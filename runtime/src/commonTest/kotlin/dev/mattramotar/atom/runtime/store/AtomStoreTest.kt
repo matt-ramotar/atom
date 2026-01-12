@@ -68,6 +68,51 @@ class AtomStoreTest {
         assertEquals(1, recovered.starts)
     }
 
+    @Test
+    fun onStartFailureDoesNotRetainEntryForSameKey() {
+        val store = AtomStore()
+        val key = AtomKey(FailOnceAtom::class, "id")
+        val state = FailOnceState()
+        var creates = 0
+        val firstJob = Job()
+        lateinit var first: FailOnceAtom
+
+        assertFailsWith<IllegalStateException> {
+            store.acquire(key) {
+                creates += 1
+                first = FailOnceAtom(state)
+                first to firstJob
+            }
+        }
+
+        assertTrue(firstJob.isCancelled)
+        assertEquals(1, creates)
+        assertEquals(1, first.starts)
+        assertEquals(1, first.stops)
+        assertEquals(1, first.disposes)
+        assertNull(store.release(key))
+
+        val secondJob = Job()
+        lateinit var second: FailOnceAtom
+        val atom = store.acquire(key) {
+            creates += 1
+            second = FailOnceAtom(state)
+            second to secondJob
+        }
+
+        assertSame(second, atom)
+        assertEquals(2, creates)
+        assertTrue(first !== second)
+        assertEquals(1, second.starts)
+        assertTrue(secondJob.isActive)
+
+        val managed = store.release(key)
+        requireNotNull(managed)
+        managed.job?.cancel()
+        managed.lifecycle.onStop()
+        managed.lifecycle.onDispose()
+    }
+
     private class TestAtom : AtomLifecycle {
         var starts = 0
         var stops = 0
@@ -94,6 +139,34 @@ class AtomStoreTest {
         override fun onStart() {
             starts += 1
             throw IllegalStateException("boom")
+        }
+
+        override fun onStop() {
+            stops += 1
+        }
+
+        override fun onDispose() {
+            disposes += 1
+        }
+    }
+
+    private class FailOnceState {
+        var shouldFail = true
+    }
+
+    private class FailOnceAtom(
+        private val state: FailOnceState
+    ) : AtomLifecycle {
+        var starts = 0
+        var stops = 0
+        var disposes = 0
+
+        override fun onStart() {
+            starts += 1
+            if (state.shouldFail) {
+                state.shouldFail = false
+                throw IllegalStateException("boom")
+            }
         }
 
         override fun onStop() {
