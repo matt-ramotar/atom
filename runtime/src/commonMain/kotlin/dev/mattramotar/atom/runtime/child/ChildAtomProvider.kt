@@ -8,7 +8,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.reflect.KClass
@@ -246,14 +248,16 @@ open class ChildAtomProvider(
         }
 
         if (failure != null) {
-            mutex.withLock {
-                if (children[key] === entry) {
-                    children.remove(key)
+            withContext(NonCancellable) {
+                mutex.withLock {
+                    if (children[key] === entry) {
+                        children.remove(key)
+                    }
                 }
+                entry.scope.coroutineContext[Job]?.cancel()
+                runCatching { entry.lifecycle.onStop() }
+                runCatching { entry.lifecycle.onDispose() }
             }
-            entry.scope.coroutineContext[Job]?.cancel()
-            runCatching { entry.lifecycle.onStop() }
-            runCatching { entry.lifecycle.onDispose() }
             throw failure as Throwable
         }
     }
