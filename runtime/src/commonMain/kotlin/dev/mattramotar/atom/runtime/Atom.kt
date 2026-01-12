@@ -6,8 +6,10 @@ import dev.mattramotar.atom.runtime.fsm.SideEffect
 import dev.mattramotar.atom.runtime.fsm.Transition
 import dev.mattramotar.atom.runtime.state.StateHandle
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.getOrElse
+import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -206,8 +208,9 @@ import kotlinx.coroutines.launch
  *
  * [Atom] implements [AtomLifecycle]:
  * - [onStart]: Called when first acquired - use for initialization
- * - [onStop]: Called when last reference released - use for cleanup
- * - [onDispose]: Called before garbage collection - use for resource release
+ * - [onStopInternal]: Called when last reference released - use for cleanup
+ * - [onDisposeInternal]: Called before garbage collection - use for resource release
+ * [onStop] and [onDispose] are final to enforce channel shutdown behavior.
  *
  * ## Thread Safety
  *
@@ -229,6 +232,7 @@ import kotlinx.coroutines.launch
  * @param F [SideEffect] type.
  * @param scope The coroutine scope for this atom. Automatically cancelled on [onStop].
  * @param handle The state container for this atom. Provides state persistence and observation.
+ * @param channelConfig Channel configuration for event/effect backpressure behavior.
  *
  * @see Intent for user-facing action interface.
  * @see Event for FSM event interface.
@@ -239,7 +243,19 @@ import kotlinx.coroutines.launch
 abstract class Atom<S : Any, I : Intent, E : Event, F : SideEffect>(
     val scope: CoroutineScope,
     val handle: StateHandle<S>,
+    private val channelConfig: AtomChannelConfig = AtomChannelConfig(),
 ) : AtomLifecycle {
+    private val scopeJob = scope.coroutineContext[Job]
+
+    init {
+        require(channelConfig.effects.capacity != Channel.UNLIMITED) {
+            "Effect channel must be bounded. Configure a capacity and overflow policy."
+        }
+
+        scopeJob?.invokeOnCompletion {
+            closeChannels()
+        }
+    }
     /**
      * Observable state flow for reactive UI updates.
      *
@@ -253,16 +269,23 @@ abstract class Atom<S : Any, I : Intent, E : Event, F : SideEffect>(
      *
      * Events dispatched via [dispatch] are queued in this channel and processed sequentially
      * by the reducer. This ensures state updates are serialized and race-free.
+     * Capacity and overflow behavior are configured via [AtomChannelConfig].
      */
-    private val events = Channel<E>(capacity = Channel.BUFFERED)
+    private val events = Channel<E>(
+        capacity = channelConfig.events.capacity,
+        onBufferOverflow = channelConfig.events.onBufferOverflow,
+    )
 
     /**
      * Internal effect channel for side effect emissions.
      *
-     * Effects emitted by the reducer are queued in this unlimited channel for asynchronous
-     * handling. Effects are processed in the order they are emitted.
+     * Effects emitted by the reducer are queued in this channel for asynchronous handling.
+     * Capacity and overflow behavior are configured via [AtomChannelConfig].
      */
-    private val _effects = Channel<F>(Channel.UNLIMITED)
+    private val _effects = Channel<F>(
+        capacity = channelConfig.effects.capacity,
+        onBufferOverflow = channelConfig.effects.onBufferOverflow,
+    )
 
     /**
      * Observable flow of side effects emitted by the reducer.
@@ -286,7 +309,14 @@ abstract class Atom<S : Any, I : Intent, E : Event, F : SideEffect>(
                 val current = handle.get()
                 val (next, fx) = reduce(current, event)
                 if (next != current) handle.set(next)
-                fx.forEach { _effects.send(it) }
+                for (effect in fx) {
+                    if (_effects.isClosedForSend) break
+                    try {
+                        _effects.send(effect)
+                    } catch (e: ClosedSendChannelException) {
+                        break
+                    }
+                }
             }
         }
     }
@@ -298,15 +328,58 @@ abstract class Atom<S : Any, I : Intent, E : Event, F : SideEffect>(
      * internal API called from [intent] implementations.
      *
      * **Thread Safety**: Safe to call from any thread.
+     * **Shutdown**: After [onStop]/[onDispose], dispatch is a no-op.
      *
      * @param event The event to dispatch to the reducer
      */
     protected fun dispatch(event: E) {
-        events.trySend(event).getOrElse {
-            scope.launch {
+        val job = scopeJob
+        if (job != null && !job.isActive) return
+        if (events.isClosedForSend) return
+
+        val result = events.trySend(event)
+        if (result.isSuccess) return
+        if (events.isClosedForSend) return
+        if (channelConfig.events.onBufferOverflow != BufferOverflow.SUSPEND) return
+
+        scope.launch {
+            try {
                 events.send(event)
+            } catch (e: ClosedSendChannelException) {
+                // Drop after shutdown.
             }
         }
+    }
+
+    /**
+     * Hook for subclasses to clean up when the atom stops.
+     *
+     * Override this instead of [onStop].
+     * Called after channels are closed, so dispatch/effect sends are ignored.
+     */
+    protected open fun onStopInternal() {}
+
+    /**
+     * Hook for subclasses to clean up when the atom is disposed.
+     *
+     * Override this instead of [onDispose].
+     * Called after channels are closed, so dispatch/effect sends are ignored.
+     */
+    protected open fun onDisposeInternal() {}
+
+    final override fun onStop() {
+        closeChannels()
+        onStopInternal()
+    }
+
+    final override fun onDispose() {
+        closeChannels()
+        onDisposeInternal()
+    }
+
+    private fun closeChannels() {
+        events.close()
+        _effects.close()
     }
 
     /**
