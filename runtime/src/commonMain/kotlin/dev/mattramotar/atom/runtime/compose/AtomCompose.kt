@@ -49,6 +49,10 @@ import kotlinx.coroutines.*
  * )
  * ```
  *
+ * Params are part of the Compose identity for an atom instance. If `params` changes while
+ * `key` stays the same, the previous instance is released and a new one is created. Keep
+ * `params` stable to retain the same instance across recompositions.
+ *
  * @param A The atom type
  * @param key Optional instance key for multi-instance atoms
  * @param params Initialization parameters (defaults to `Unit`)
@@ -64,9 +68,11 @@ inline fun <reified A : AtomLifecycle> atom(
     val registry = LocalAtomFactories.current
     val handles = LocalStateHandleFactory.current
     val parentScope = rememberCoroutineScope()
-    val atomKey = remember(type, key) { AtomKey(type, key) }
+    val atomKey = remember(type, key, params) {
+        AtomKey(type, AtomParamsKey(instanceKey = key, params = params))
+    }
 
-    val instance = remember(type, key, params) {
+    val instance = remember(atomKey) {
         val entry = registry.entryFor(type) ?: error("No AtomFactoryEntry for ${type.simpleName}.")
 
         val expectsUnitParams = entry.paramsClass == Unit::class
@@ -119,3 +125,9 @@ inline fun <reified A : AtomLifecycle> atom(
 
     return instance
 }
+
+@PublishedApi
+internal data class AtomParamsKey(
+    val instanceKey: Any?,
+    val params: Any
+)
