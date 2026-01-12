@@ -18,8 +18,8 @@ data class AtomChannelConfig(
     /**
      * Channel capacity and overflow behavior.
      *
-     * Note: drop policies require a positive buffer capacity. Rendezvous channels only support
-     * [BufferOverflow.SUSPEND].
+     * Note: drop policies require a positive buffer capacity or [Channel.BUFFERED]. Rendezvous
+     * channels only support [BufferOverflow.SUSPEND].
      */
     data class ChannelConfig(
         val capacity: Int = Channel.BUFFERED,

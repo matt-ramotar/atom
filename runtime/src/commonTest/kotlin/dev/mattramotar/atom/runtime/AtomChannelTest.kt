@@ -61,6 +61,31 @@ class AtomChannelTest {
     }
 
     @Test
+    fun dispatchDoesNotLeakToRestartedChannel() = runTest {
+        val config = AtomChannelConfig(
+            events = AtomChannelConfig.ChannelConfig(
+                capacity = Channel.RENDEZVOUS,
+                onBufferOverflow = BufferOverflow.SUSPEND
+            )
+        )
+        val atom = TestAtom(
+            scope = CoroutineScope(coroutineContext),
+            handle = InMemoryStateHandle(TestState()),
+            channelConfig = config
+        )
+        atom.onStart()
+
+        atom.emit(listOf(TestEffect(1)))
+        atom.onStop()
+        atom.onStart()
+        runCurrent()
+
+        assertEquals(0, atom.get().count)
+        atom.onStop()
+        runCurrent()
+    }
+
+    @Test
     fun effectsOverflowDropsOldestWhenConfigured() = runTest {
         val config = AtomChannelConfig(
             effects = AtomChannelConfig.ChannelConfig(
@@ -116,6 +141,22 @@ class AtomChannelTest {
         assertEquals(2, atom.get().count)
         atom.onStop()
         runCurrent()
+    }
+
+    @Test
+    fun bufferedChannelAllowsDropOverflow() = runTest {
+        val config = AtomChannelConfig(
+            events = AtomChannelConfig.ChannelConfig(
+                capacity = Channel.BUFFERED,
+                onBufferOverflow = BufferOverflow.DROP_OLDEST
+            )
+        )
+
+        TestAtom(
+            scope = CoroutineScope(coroutineContext),
+            handle = InMemoryStateHandle(TestState()),
+            channelConfig = config
+        )
     }
 
     @Test

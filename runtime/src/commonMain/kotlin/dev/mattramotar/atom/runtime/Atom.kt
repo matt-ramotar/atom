@@ -330,16 +330,17 @@ abstract class Atom<S : Any, I : Intent, E : Event, F : SideEffect>(
     protected fun dispatch(event: E) {
         val job = scopeJob
         if (job != null && !job.isActive) return
-        if (events.isClosedForSend) return
+        val eventsChannel = events
+        if (eventsChannel.isClosedForSend) return
 
-        val result = events.trySend(event)
+        val result = eventsChannel.trySend(event)
         if (result.isSuccess) return
-        if (events.isClosedForSend) return
+        if (eventsChannel.isClosedForSend) return
         if (channelConfig.events.onBufferOverflow != BufferOverflow.SUSPEND) return
 
         scope.launch {
             try {
-                events.send(event)
+                eventsChannel.send(event)
             } catch (e: ClosedSendChannelException) {
                 // Drop after shutdown.
             }
@@ -418,8 +419,8 @@ abstract class Atom<S : Any, I : Intent, E : Event, F : SideEffect>(
         }
 
         if (overflow != BufferOverflow.SUSPEND) {
-            require(capacity > 0) {
-                "$label channel with overflow $overflow requires positive buffer capacity."
+            require(capacity > 0 || capacity == Channel.BUFFERED) {
+                "$label channel with overflow $overflow requires positive buffer capacity or Channel.BUFFERED."
             }
         }
     }
