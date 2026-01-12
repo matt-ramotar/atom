@@ -10,7 +10,7 @@ import kotlinx.coroutines.Job
  *
  * [AtomStore] manages atom lifecycle via reference counting:
  * - **Acquire**: Increment ref count, create if new
- * - **Release**: Decrement ref count, dispose if zero
+ * - **Release**: Decrement ref count, return the entry when zero
  * - **Sharing**: Multiple consumers share the same instance
  *
  * ## Reference Counting
@@ -19,12 +19,13 @@ import kotlinx.coroutines.Job
  * acquire(key) → refs: 0→1 → onStart() called, atom returned
  * acquire(key) → refs: 1→2 → same atom returned
  * release(key) → refs: 2→1 → nothing happens
- * release(key) → refs: 1→0 → onStop(), onDispose() called, atom removed
+ * release(key) → refs: 1→0 → entry returned for disposal, atom removed
  * ```
  *
  * ## Thread Safety
  *
  * All operations are synchronized via [Lock]. Safe to call from multiple threads concurrently.
+ * Lifecycle callbacks are invoked outside the internal lock.
  *
  * @see AtomStoreOwner for ownership interface
  * @see dev.mattramotar.atom.runtime.compose.LocalAtomStoreOwner for Compose integration
@@ -34,10 +35,17 @@ class AtomStore {
      * Managed atom entry with lifecycle and reference count.
      *
      * @property lifecycle The atom instance
-     * @property job The atom's coroutine job (cancelled on dispose)
+     * @property job The atom's coroutine job (to be cancelled by the owner on dispose)
      * @property refs Current reference count
      */
-    data class Managed(val lifecycle: AtomLifecycle, val job: Job?, var refs: Int)
+    data class Managed(
+        val lifecycle: AtomLifecycle,
+        val job: Job?,
+        var refs: Int
+    ) {
+        internal val startLock = Lock()
+        internal var startError: Throwable? = null
+    }
 
     private val map = LinkedHashMap<AtomKey, Managed>()
     private val lock = Lock()
@@ -45,8 +53,8 @@ class AtomStore {
     /**
      * Acquires an atom, creating it if necessary.
      *
-     * **Lifecycle Guarantee**: [AtomLifecycle.onStart] is called only after successful installation,
-     * ensuring no unbalanced lifecycle callbacks even in concurrent scenarios.
+     * **Lifecycle Guarantee**: [AtomLifecycle.onStart] is called only after successful installation.
+     * If [AtomLifecycle.onStart] throws, the entry is removed and the exception is rethrown.
      *
      * @param key The atom key
      * @param create Lambda that creates the atom (called only if atom doesn't exist).
@@ -59,43 +67,94 @@ class AtomStore {
         create: () -> Pair<A, Job?>
     ): A {
         // Fast path: check cache without creating
+        var existing: Managed? = null
         lock.withLock {
-            val existing = map[key]
-            if (existing != null) {
-                existing.refs++
-                @Suppress("UNCHECKED_CAST")
-                return existing.lifecycle as A
+            val cached = map[key]
+            if (cached != null) {
+                cached.refs++
+                existing = cached
             }
+        }
+        if (existing != null) {
+            awaitStart(key, existing)
+            @Suppress("UNCHECKED_CAST")
+            return existing.lifecycle as A
         }
 
         // Slow path: create outside lock
         val (atom, job) = create()
+        val managed = Managed(atom, job, refs = 1)
+        var isWinner = false
+        var winner: Managed? = null
 
-        // Install with double-check
-        lock.withLock {
-            val existing = map[key]
-            if (existing != null) {
-                // Lost race - use existing, cleanup discarded atom
-                existing.refs++
-                // Cancel job but skip lifecycle calls (atom was never "started" by store)
-                job?.cancel()
-                @Suppress("UNCHECKED_CAST")
-                return existing.lifecycle as A
+        managed.startLock.withLock {
+            lock.withLock {
+                val cached = map[key]
+                if (cached != null) {
+                    cached.refs++
+                    winner = cached
+                } else {
+                    map[key] = managed
+                    winner = managed
+                    isWinner = true
+                }
             }
 
-            // We won - install and start
-            map[key] = Managed(atom, job, refs = 1)
-            runCatching { atom.onStart() }
+            if (!isWinner) return@withLock
+
+            try {
+                atom.onStart()
+            } catch (t: Throwable) {
+                managed.startError = t
+                lock.withLock {
+                    if (map[key] === managed) {
+                        map.remove(key)
+                    }
+                }
+                job?.cancel()
+                runCatching { atom.onStop() }
+                runCatching { atom.onDispose() }
+                throw t
+            }
+        }
+
+        if (!isWinner) {
+            job?.cancel()
+            val existingWinner = requireNotNull(winner)
+            awaitStart(key, existingWinner)
             @Suppress("UNCHECKED_CAST")
-            return atom
+            return existingWinner.lifecycle as A
+        }
+
+        return atom
+    }
+
+    private fun awaitStart(key: AtomKey, managed: Managed) {
+        try {
+            managed.startLock.withLock {
+                managed.startError?.let { throw it }
+            }
+        } catch (t: Throwable) {
+            lock.withLock {
+                if (map[key] === managed) {
+                    managed.refs--
+                    if (managed.refs <= 0) {
+                        map.remove(key)
+                    }
+                }
+            }
+            throw t
         }
     }
 
     /**
-     * Releases an atom, disposing it if ref count reaches zero.
+     * Releases an atom, returning it when ref count reaches zero.
      *
      * @param key The atom key
-     * @return The managed entry if disposed, or null if still referenced
+     * @return The managed entry if ref count reached zero, or null if still referenced
+     *
+     * Callers are responsible for cancelling the job and invoking lifecycle callbacks on the
+     * returned entry.
      */
     fun release(key: AtomKey): Managed? = lock.withLock {
         val managed = map[key] ?: return null
@@ -108,7 +167,7 @@ class AtomStore {
     }
 
     /**
-     * Clears all atoms, disposing them regardless of ref count.
+     * Clears all atoms, returning them for disposal regardless of ref count.
      *
      * @return List of all managed entries (for disposal)
      */

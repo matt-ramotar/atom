@@ -1,17 +1,18 @@
 package dev.mattramotar.atom.runtime.child
 
-import dev.mattramotar.atom.runtime.Atom
 import dev.mattramotar.atom.runtime.AtomKey
 import dev.mattramotar.atom.runtime.AtomLifecycle
 import dev.mattramotar.atom.runtime.factory.AtomFactoryRegistry
 import dev.mattramotar.atom.runtime.state.StateHandleFactory
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.reflect.KClass
-import dev.mattramotar.atom.runtime.child.ChildAtomProvider
+
 /**
  * Manages a dynamic collection of child atoms.
  *
@@ -36,7 +37,7 @@ import dev.mattramotar.atom.runtime.child.ChildAtomProvider
  *
  * [sync] creates atoms for new items and disposes atoms for removed items.
  *
- * @see Atom for parent atom integration
+ * @see dev.mattramotar.atom.runtime.Atom for parent atom integration
  */
 open class ChildAtomProvider(
     private val parentScope: CoroutineScope,
@@ -45,7 +46,11 @@ open class ChildAtomProvider(
 ) {
     private data class Entry(
         val lifecycle: AtomLifecycle,
-        val scope: CoroutineScope
+        val scope: CoroutineScope,
+        val startSignal: CompletableDeferred<Unit> = CompletableDeferred(),
+        val lifecycleMutex: Mutex = Mutex(),
+        var started: Boolean = false,
+        var disposed: Boolean = false
     )
 
     private val children = mutableMapOf<AtomKey, Entry>()
@@ -55,15 +60,27 @@ open class ChildAtomProvider(
         type: KClass<A>,
         id: Any,
         params: P
-    ): A = mutex.withLock {
+    ): A {
         val key = AtomKey(type, id)
-
-        val entry = children.getOrPut(key) {
-            val newEntry = createEntry(type, key, params)
-            // Start only after successful installation
-            runCatching { newEntry.lifecycle.onStart() }
-            newEntry
+        var created = false
+        val entry = mutex.withLock {
+            val existing = children[key]
+            if (existing != null) {
+                existing
+            } else {
+                val newEntry = createEntry(type, key, params)
+                children[key] = newEntry
+                created = true
+                newEntry
+            }
         }
+
+        if (created) {
+            startEntry(key, entry)
+        }
+
+        entry.startSignal.await()
+
         @Suppress("UNCHECKED_CAST")
         return entry.lifecycle as A
     }
@@ -76,11 +93,18 @@ open class ChildAtomProvider(
         items: Map<Any, P>
     ) {
         val toCreate = mutableListOf<Triple<KClass<A>, AtomKey, P>>()
-        val toDispose = mutableListOf<AtomKey>()
+        val toDispose = mutableListOf<Entry>()
 
         mutex.withLock {
             val activeKeys = items.keys.map { AtomKey(type, it) }.toSet()
-            children.keys.filter { it.type == type && it !in activeKeys }.forEach { toDispose += it }
+            val iterator = children.entries.iterator()
+            while (iterator.hasNext()) {
+                val (key, entry) = iterator.next()
+                if (key.type == type && key !in activeKeys) {
+                    iterator.remove()
+                    toDispose += entry
+                }
+            }
             items.forEach { (id, params) ->
                 val key = AtomKey(type, id)
                 if (children[key] == null) {
@@ -90,24 +114,31 @@ open class ChildAtomProvider(
         }
 
         // Dispose outside lock
-        toDispose.forEach { key -> disposeUnsafe(key) }
+        for (entry in toDispose) {
+            disposeEntry(entry)
+        }
 
         // Create outside lock, then install under lock
         toCreate.forEach { (t, key, params) ->
-            val entry = registry.entryFor(t) ?: error("No factory for ${t.simpleName}!")
-            val childScope = requireChildScope()
-            @Suppress("UNCHECKED_CAST") val stateClass = entry.stateClass as KClass<Any>
-            val state = stateHandleFactory.create(key, stateClass, { entry.initialAny(params) }, entry.serializerAny)
-            @Suppress("UNCHECKED_CAST") val atom = entry.createAny(childScope, state, params)
-
-            mutex.withLock {
-                if (!children.contains(key)) {
-                    children[key] = Entry(atom, childScope)
-                    // Start only after successful installation
-                    runCatching { atom.onStart() }
+            val newEntry = createEntry(t, key, params)
+            val installed = mutex.withLock {
+                if (children.containsKey(key)) {
+                    false
                 } else {
-                    // Lost race - cleanup without lifecycle calls (atom never started)
-                    childScope.coroutineContext[Job]?.cancel()
+                    children[key] = newEntry
+                    true
+                }
+            }
+
+            if (installed) {
+                startEntry(key, newEntry)
+            } else {
+                // Lost race - cleanup without lifecycle calls (atom never started)
+                newEntry.scope.coroutineContext[Job]?.cancel()
+                if (!newEntry.startSignal.isCompleted) {
+                    newEntry.startSignal.completeExceptionally(
+                        CancellationException("Child atom was superseded during sync.")
+                    )
                 }
             }
         }
@@ -120,9 +151,15 @@ open class ChildAtomProvider(
         sync(type, ids.associateWith { Unit })
     }
 
-    suspend fun <A : AtomLifecycle> get(type: KClass<A>, id: Any): A? = mutex.withLock {
+    suspend fun <A : AtomLifecycle> get(type: KClass<A>, id: Any): A? {
+        val entry = mutex.withLock {
+            children[AtomKey(type, id)]
+        } ?: return null
+
+        entry.startSignal.await()
+
         @Suppress("UNCHECKED_CAST")
-        return children[AtomKey(type, id)]?.lifecycle as? A
+        return entry.lifecycle as A
     }
 
     private fun <A : AtomLifecycle, P : Any> createEntry(
@@ -159,11 +196,18 @@ open class ChildAtomProvider(
         return Entry(atom, childScope)
     }
 
-    private fun disposeUnsafe(key: AtomKey) {
-        children.remove(key)?.let { entry ->
-            runCatching { entry.lifecycle.onStop() }
-            runCatching { entry.lifecycle.onDispose() }
+    private suspend fun disposeEntry(entry: Entry) {
+        entry.lifecycleMutex.withLock {
+            entry.disposed = true
             entry.scope.coroutineContext[Job]?.cancel()
+            if (entry.started) {
+                runCatching { entry.lifecycle.onStop() }
+                runCatching { entry.lifecycle.onDispose() }
+            } else if (!entry.startSignal.isCompleted) {
+                entry.startSignal.completeExceptionally(
+                    CancellationException("Child atom disposed before start.")
+                )
+            }
         }
     }
 
@@ -173,10 +217,44 @@ open class ChildAtomProvider(
             children.clear()
             values
         }
-        toDispose.forEach { entry ->
+        for (entry in toDispose) {
+            disposeEntry(entry)
+        }
+    }
+
+    private suspend fun startEntry(key: AtomKey, entry: Entry) {
+        if (entry.startSignal.isCompleted) return
+        var failure: Throwable? = null
+        entry.lifecycleMutex.withLock {
+            if (entry.disposed) {
+                if (!entry.startSignal.isCompleted) {
+                    entry.startSignal.completeExceptionally(
+                        CancellationException("Child atom disposed before start.")
+                    )
+                }
+                return
+            }
+
+            failure = runCatching { entry.lifecycle.onStart() }.exceptionOrNull()
+            if (failure == null) {
+                entry.started = true
+                entry.startSignal.complete(Unit)
+            } else if (!entry.startSignal.isCompleted) {
+                entry.disposed = true
+                entry.startSignal.completeExceptionally(failure as Throwable)
+            }
+        }
+
+        if (failure != null) {
+            entry.scope.coroutineContext[Job]?.cancel()
             runCatching { entry.lifecycle.onStop() }
             runCatching { entry.lifecycle.onDispose() }
-            entry.scope.coroutineContext[Job]?.cancel()
+            mutex.withLock {
+                if (children[key] === entry) {
+                    children.remove(key)
+                }
+            }
+            throw failure as Throwable
         }
     }
 

@@ -115,7 +115,7 @@ import kotlin.reflect.KClass
  *     }
  *
  *     fun release(key: AtomKey): Managed? {
- *         // Decrement refcount, dispose if zero
+ *         // Decrement refcount, return entry if zero
  *     }
  * }
  * ```
