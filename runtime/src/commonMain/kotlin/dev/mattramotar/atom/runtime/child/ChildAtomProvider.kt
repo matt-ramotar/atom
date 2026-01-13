@@ -52,6 +52,7 @@ open class ChildAtomProvider(
         val startSignal: CompletableDeferred<Unit> = CompletableDeferred(),
         val lifecycleMutex: Mutex = Mutex(),
         var started: Boolean = false,
+        var starting: Boolean = false,
         var disposed: Boolean = false
     )
 
@@ -199,17 +200,48 @@ open class ChildAtomProvider(
     }
 
     private suspend fun disposeEntry(entry: Entry) {
+        var shouldAwaitStart = false
+        var shouldDispose = false
+        var cancelNow = false
+
         entry.lifecycleMutex.withLock {
+            if (entry.disposed) return
             entry.disposed = true
-            entry.scope.coroutineContext[Job]?.cancel()
-            if (entry.started) {
-                runCatching { entry.lifecycle.onStop() }
-                runCatching { entry.lifecycle.onDispose() }
-            } else if (!entry.startSignal.isCompleted) {
-                entry.startSignal.completeExceptionally(
-                    CancellationException("Child atom disposed before start.")
-                )
+            when {
+                entry.started -> {
+                    shouldDispose = true
+                    cancelNow = true
+                }
+                entry.starting -> {
+                    shouldAwaitStart = true
+                }
+                else -> {
+                    cancelNow = true
+                    if (!entry.startSignal.isCompleted) {
+                        entry.startSignal.completeExceptionally(
+                            CancellationException("Child atom disposed before start.")
+                        )
+                    }
+                }
             }
+        }
+
+        if (cancelNow) {
+            entry.scope.coroutineContext[Job]?.cancel()
+        }
+
+        if (shouldAwaitStart) {
+            val failure = runCatching { entry.startSignal.await() }.exceptionOrNull()
+            if (failure != null) {
+                return
+            }
+            entry.scope.coroutineContext[Job]?.cancel()
+            shouldDispose = true
+        }
+
+        if (shouldDispose) {
+            runCatching { entry.lifecycle.onStop() }
+            runCatching { entry.lifecycle.onDispose() }
         }
     }
 
@@ -226,7 +258,8 @@ open class ChildAtomProvider(
 
     private suspend fun startEntry(key: AtomKey, entry: Entry) {
         if (entry.startSignal.isCompleted) return
-        var failure: Throwable? = null
+        var shouldStart = false
+
         entry.lifecycleMutex.withLock {
             if (entry.disposed) {
                 if (!entry.startSignal.isCompleted) {
@@ -236,11 +269,25 @@ open class ChildAtomProvider(
                 }
                 return
             }
+            if (entry.started || entry.starting) return
+            entry.starting = true
+            shouldStart = true
+        }
 
-            failure = runCatching { entry.lifecycle.onStart() }.exceptionOrNull()
+        if (!shouldStart) {
+            entry.startSignal.await()
+            return
+        }
+
+        val failure = runCatching { entry.lifecycle.onStart() }.exceptionOrNull()
+
+        entry.lifecycleMutex.withLock {
+            entry.starting = false
             if (failure == null) {
                 entry.started = true
-                entry.startSignal.complete(Unit)
+                if (!entry.startSignal.isCompleted) {
+                    entry.startSignal.complete(Unit)
+                }
             } else if (!entry.startSignal.isCompleted) {
                 entry.disposed = true
                 entry.startSignal.completeExceptionally(failure as Throwable)

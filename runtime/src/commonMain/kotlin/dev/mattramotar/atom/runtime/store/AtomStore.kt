@@ -3,6 +3,7 @@ package dev.mattramotar.atom.runtime.store
 import dev.mattramotar.atom.runtime.AtomKey
 import dev.mattramotar.atom.runtime.AtomLifecycle
 import dev.mattramotar.atom.runtime.internal.coroutines.Lock
+import dev.mattramotar.atom.runtime.internal.coroutines.StartSignal
 import kotlinx.coroutines.Job
 
 /**
@@ -43,8 +44,7 @@ class AtomStore {
         val job: Job?,
         var refs: Int
     ) {
-        internal val startLock = Lock()
-        internal var startError: Throwable? = null
+        internal val startSignal = StartSignal()
     }
 
     private val map = LinkedHashMap<AtomKey, Managed>()
@@ -83,38 +83,21 @@ class AtomStore {
 
         // Slow path: create outside lock
         val (atom, job) = create()
-        val managed = Managed(atom, job, refs = 1)
+        val managed = Managed(atom, job, refs = 1).apply {
+            startSignal.markStarting()
+        }
         var isWinner = false
         var winner: Managed? = null
 
-        managed.startLock.withLock {
-            lock.withLock {
-                val cached = map[key]
-                if (cached != null) {
-                    cached.refs++
-                    winner = cached
-                } else {
-                    map[key] = managed
-                    winner = managed
-                    isWinner = true
-                }
-            }
-
-            if (!isWinner) return@withLock
-
-            try {
-                atom.onStart()
-            } catch (t: Throwable) {
-                managed.startError = t
-                lock.withLock {
-                    if (map[key] === managed) {
-                        map.remove(key)
-                    }
-                }
-                job?.cancel()
-                runCatching { atom.onStop() }
-                runCatching { atom.onDispose() }
-                throw t
+        lock.withLock {
+            val cached = map[key]
+            if (cached != null) {
+                cached.refs++
+                winner = cached
+            } else {
+                map[key] = managed
+                winner = managed
+                isWinner = true
             }
         }
 
@@ -126,14 +109,28 @@ class AtomStore {
             return existingWinner.lifecycle as A
         }
 
+        try {
+            atom.onStart()
+            managed.startSignal.completeSuccess()
+        } catch (t: Throwable) {
+            managed.startSignal.completeFailure(t)
+            lock.withLock {
+                if (map[key] === managed) {
+                    map.remove(key)
+                }
+            }
+            job?.cancel()
+            runCatching { atom.onStop() }
+            runCatching { atom.onDispose() }
+            throw t
+        }
+
         return atom
     }
 
     private fun awaitStart(key: AtomKey, managed: Managed) {
         try {
-            managed.startLock.withLock {
-                managed.startError?.let { throw it }
-            }
+            managed.startSignal.await()
         } catch (t: Throwable) {
             lock.withLock {
                 if (map[key] === managed) {
