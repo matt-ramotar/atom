@@ -4,8 +4,14 @@ import dev.mattramotar.atom.runtime.AtomLifecycle
 import dev.mattramotar.atom.runtime.factory.AtomFactoryRegistry
 import dev.mattramotar.atom.runtime.factory.Atoms
 import dev.mattramotar.atom.runtime.state.InMemoryStateHandleFactory
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.runTest
 import kotlin.reflect.KClass
 import kotlin.test.Test
@@ -78,6 +84,59 @@ class ChildAtomProviderTest {
         provider.clear()
     }
 
+    @Test
+    fun concurrentSyncGetOrCreateAndClearIsSafe() = runTest {
+        val provider = ChildAtomProvider(
+            parentScope = CoroutineScope(coroutineContext),
+            stateHandleFactory = InMemoryStateHandleFactory,
+            registry = testRegistryNoLog()
+        )
+        val errors = mutableListOf<Throwable>()
+        val errorMutex = Mutex()
+
+        suspend fun recordError(t: Throwable) {
+            if (t is CancellationException) return
+            errorMutex.withLock {
+                errors += t
+            }
+        }
+
+        supervisorScope {
+            repeat(30) { index ->
+                val id = "id-${index % 3}"
+                launch(Dispatchers.Default) {
+                    try {
+                        provider.getOrCreate(NoopChildAtom::class, id, TestParams(id))
+                    } catch (t: Throwable) {
+                        recordError(t)
+                    }
+                }
+                launch(Dispatchers.Default) {
+                    try {
+                        provider.sync(
+                            NoopChildAtom::class,
+                            mapOf(id to TestParams(id))
+                        )
+                    } catch (t: Throwable) {
+                        recordError(t)
+                    }
+                }
+                if (index % 5 == 0) {
+                    launch(Dispatchers.Default) {
+                        try {
+                            provider.clear()
+                        } catch (t: Throwable) {
+                            recordError(t)
+                        }
+                    }
+                }
+            }
+        }
+
+        provider.clear()
+        assertTrue(errors.isEmpty(), "Unexpected errors: $errors")
+    }
+
     private data class TestParams(val id: String)
 
     private data class TestState(val value: Int = 0)
@@ -112,6 +171,8 @@ class ChildAtomProviderTest {
         }
     }
 
+    private class NoopChildAtom : AtomLifecycle
+
     private fun testRegistry(log: CallLog): AtomFactoryRegistry {
         val entry = Atoms.factory<TestChildAtom, TestState, TestParams>(
             create = { scope, _, params ->
@@ -123,6 +184,20 @@ class ChildAtomProviderTest {
         return object : AtomFactoryRegistry {
             override fun entryFor(type: KClass<out AtomLifecycle>) =
                 if (type == TestChildAtom::class) entry else null
+        }
+    }
+
+    private fun testRegistryNoLog(): AtomFactoryRegistry {
+        val entry = Atoms.factory<NoopChildAtom, TestState, TestParams>(
+            create = { _, _, _ ->
+                NoopChildAtom()
+            },
+            initial = { TestState() }
+        )
+
+        return object : AtomFactoryRegistry {
+            override fun entryFor(type: KClass<out AtomLifecycle>) =
+                if (type == NoopChildAtom::class) entry else null
         }
     }
 }
