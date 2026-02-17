@@ -39,6 +39,11 @@ Atom enforces binary compatibility for `1.x` public APIs in CI using Kotlin Bina
 
 See `docs/API_COMPATIBILITY_POLICY.md` for scope, guarantees, and baseline update rules.
 
+## Target support
+
+Atom's versioned multiplatform support and CI enforcement levels are defined in
+`docs/TARGET_SUPPORT_MATRIX.md`.
+
 ## Quickstart (KMP)
 
 ```kotlin
@@ -114,6 +119,7 @@ class PostAtom(
 - `./gradlew :runtime:tasks --all`
 - `./gradlew :metro:tasks --all`
 - `./gradlew :sample:tasks --all`
+- `./gradlew :runtime:iosSimulatorArm64Test :metro:iosSimulatorArm64Test :sample:iosSimulatorArm64Test --continue`
 - `./gradlew check --continue` (requires Android SDK configured)
 
 ## License
