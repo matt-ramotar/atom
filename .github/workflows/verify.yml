@@ -37,6 +37,9 @@ jobs:
       - name: Grant execute permission for Gradlew
         run: chmod +x gradlew
 
+      - name: Run API compatibility checks
+        run: ./gradlew apiCheck --no-configuration-cache
+
       - name: Run JVM and plugin verification
         run: ./gradlew :ksp:jvmTest :ksp:allTests :gradle-plugin:test :runtime:jvmTest :metro:jvmTest :sample:jvmTest --continue --no-configuration-cache
 

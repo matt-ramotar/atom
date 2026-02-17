@@ -42,6 +42,9 @@ jobs:
           fi
           echo "Validated release version: $VERSION"
 
+      - name: Verify API compatibility gates
+        run: ./gradlew apiCheck --no-configuration-cache
+
       - name: Verify JVM and plugin gates
         run: ./gradlew :ksp:jvmTest :ksp:allTests :gradle-plugin:test :runtime:jvmTest :metro:jvmTest :sample:jvmTest --continue --no-configuration-cache
 

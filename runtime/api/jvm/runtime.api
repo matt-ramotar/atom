@@ -1,0 +1,358 @@
+public abstract class dev/mattramotar/atom/runtime/Atom : dev/mattramotar/atom/runtime/AtomLifecycle {
+	public static final field $stable I
+	public fun <init> (Lkotlinx/coroutines/CoroutineScope;Ldev/mattramotar/atom/runtime/state/StateHandle;Ldev/mattramotar/atom/runtime/AtomChannelConfig;)V
+	public synthetic fun <init> (Lkotlinx/coroutines/CoroutineScope;Ldev/mattramotar/atom/runtime/state/StateHandle;Ldev/mattramotar/atom/runtime/AtomChannelConfig;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	protected final fun dispatch (Ldev/mattramotar/atom/runtime/fsm/Event;)V
+	public final fun get ()Ljava/lang/Object;
+	public final fun getEffects ()Lkotlinx/coroutines/flow/Flow;
+	public final fun getHandle ()Ldev/mattramotar/atom/runtime/state/StateHandle;
+	public final fun getScope ()Lkotlinx/coroutines/CoroutineScope;
+	public final fun getState ()Lkotlinx/coroutines/flow/StateFlow;
+	public fun intent (Ldev/mattramotar/atom/runtime/fsm/Intent;)V
+	public final fun onDispose ()V
+	protected fun onDisposeInternal ()V
+	public fun onStart ()V
+	public final fun onStop ()V
+	protected fun onStopInternal ()V
+	protected fun reduce (Ljava/lang/Object;Ldev/mattramotar/atom/runtime/fsm/Event;)Ldev/mattramotar/atom/runtime/fsm/Transition;
+}
+
+public final class dev/mattramotar/atom/runtime/AtomChannelConfig {
+	public static final field $stable I
+	public fun <init> ()V
+	public fun <init> (Ldev/mattramotar/atom/runtime/AtomChannelConfig$ChannelConfig;Ldev/mattramotar/atom/runtime/AtomChannelConfig$ChannelConfig;)V
+	public synthetic fun <init> (Ldev/mattramotar/atom/runtime/AtomChannelConfig$ChannelConfig;Ldev/mattramotar/atom/runtime/AtomChannelConfig$ChannelConfig;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ldev/mattramotar/atom/runtime/AtomChannelConfig$ChannelConfig;
+	public final fun component2 ()Ldev/mattramotar/atom/runtime/AtomChannelConfig$ChannelConfig;
+	public final fun copy (Ldev/mattramotar/atom/runtime/AtomChannelConfig$ChannelConfig;Ldev/mattramotar/atom/runtime/AtomChannelConfig$ChannelConfig;)Ldev/mattramotar/atom/runtime/AtomChannelConfig;
+	public static synthetic fun copy$default (Ldev/mattramotar/atom/runtime/AtomChannelConfig;Ldev/mattramotar/atom/runtime/AtomChannelConfig$ChannelConfig;Ldev/mattramotar/atom/runtime/AtomChannelConfig$ChannelConfig;ILjava/lang/Object;)Ldev/mattramotar/atom/runtime/AtomChannelConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEffects ()Ldev/mattramotar/atom/runtime/AtomChannelConfig$ChannelConfig;
+	public final fun getEvents ()Ldev/mattramotar/atom/runtime/AtomChannelConfig$ChannelConfig;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/mattramotar/atom/runtime/AtomChannelConfig$ChannelConfig {
+	public static final field $stable I
+	public fun <init> ()V
+	public fun <init> (ILkotlinx/coroutines/channels/BufferOverflow;)V
+	public synthetic fun <init> (ILkotlinx/coroutines/channels/BufferOverflow;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2 ()Lkotlinx/coroutines/channels/BufferOverflow;
+	public final fun copy (ILkotlinx/coroutines/channels/BufferOverflow;)Ldev/mattramotar/atom/runtime/AtomChannelConfig$ChannelConfig;
+	public static synthetic fun copy$default (Ldev/mattramotar/atom/runtime/AtomChannelConfig$ChannelConfig;ILkotlinx/coroutines/channels/BufferOverflow;ILjava/lang/Object;)Ldev/mattramotar/atom/runtime/AtomChannelConfig$ChannelConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCapacity ()I
+	public final fun getOnBufferOverflow ()Lkotlinx/coroutines/channels/BufferOverflow;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/mattramotar/atom/runtime/AtomKey {
+	public static final field $stable I
+	public fun <init> (Lkotlin/reflect/KClass;Ljava/lang/Object;)V
+	public final fun component1 ()Lkotlin/reflect/KClass;
+	public final fun component2 ()Ljava/lang/Object;
+	public final fun copy (Lkotlin/reflect/KClass;Ljava/lang/Object;)Ldev/mattramotar/atom/runtime/AtomKey;
+	public static synthetic fun copy$default (Ldev/mattramotar/atom/runtime/AtomKey;Lkotlin/reflect/KClass;Ljava/lang/Object;ILjava/lang/Object;)Ldev/mattramotar/atom/runtime/AtomKey;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInstanceKey ()Ljava/lang/Object;
+	public final fun getType ()Lkotlin/reflect/KClass;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/mattramotar/atom/runtime/AtomLifecycle {
+	public fun onDispose ()V
+	public fun onStart ()V
+	public fun onStop ()V
+}
+
+public final class dev/mattramotar/atom/runtime/AtomLifecycle$DefaultImpls {
+	public static fun onDispose (Ldev/mattramotar/atom/runtime/AtomLifecycle;)V
+	public static fun onStart (Ldev/mattramotar/atom/runtime/AtomLifecycle;)V
+	public static fun onStop (Ldev/mattramotar/atom/runtime/AtomLifecycle;)V
+}
+
+public abstract interface annotation class dev/mattramotar/atom/runtime/annotations/AtomQualifier : java/lang/annotation/Annotation {
+	public abstract fun name ()Ljava/lang/String;
+}
+
+public abstract interface annotation class dev/mattramotar/atom/runtime/annotations/AutoAtom : java/lang/annotation/Annotation {
+	public abstract fun params ()Ljava/lang/Class;
+	public abstract fun scope ()Ljava/lang/Class;
+	public abstract fun serializer ()Ljava/lang/Class;
+	public abstract fun state ()Ljava/lang/Class;
+}
+
+public final class dev/mattramotar/atom/runtime/annotations/AutoSerializer {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/mattramotar/atom/runtime/annotations/AutoSerializer;
+}
+
+public final class dev/mattramotar/atom/runtime/annotations/InferredScope {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/mattramotar/atom/runtime/annotations/InferredScope;
+}
+
+public final class dev/mattramotar/atom/runtime/annotations/InferredType {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/mattramotar/atom/runtime/annotations/InferredType;
+}
+
+public abstract interface annotation class dev/mattramotar/atom/runtime/annotations/InitialState : java/lang/annotation/Annotation {
+}
+
+public class dev/mattramotar/atom/runtime/child/ChildAtomProvider {
+	public static final field $stable I
+	public fun <init> (Lkotlinx/coroutines/CoroutineScope;Ldev/mattramotar/atom/runtime/state/StateHandleFactory;Ldev/mattramotar/atom/runtime/factory/AtomFactoryRegistry;)V
+	public final fun clear (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun get (Lkotlin/reflect/KClass;Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getOrCreate (Lkotlin/reflect/KClass;Ljava/lang/Object;Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getOrCreate (Lkotlin/reflect/KClass;Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun sync (Lkotlin/reflect/KClass;Ljava/util/Collection;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun sync (Lkotlin/reflect/KClass;Ljava/util/Map;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/mattramotar/atom/runtime/compose/AtomCompositionLocalsKt {
+	public static final fun AtomCompositionLocals (Ldev/mattramotar/atom/runtime/factory/AtomFactoryRegistry;Ldev/mattramotar/atom/runtime/store/AtomStoreOwner;Ldev/mattramotar/atom/runtime/state/StateHandleFactory;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class dev/mattramotar/atom/runtime/compose/AtomDIKt {
+	public static final fun AtomDI (Ldev/mattramotar/atom/runtime/di/AtomContainer;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;I)V
+}
+
+public final class dev/mattramotar/atom/runtime/compose/AtomParamsKey {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/Object;Ljava/lang/Object;Ldev/mattramotar/atom/runtime/store/AtomStoreOwner;Ldev/mattramotar/atom/runtime/factory/AtomFactoryRegistry;Ldev/mattramotar/atom/runtime/state/StateHandleFactory;)V
+	public final fun component1 ()Ljava/lang/Object;
+	public final fun component2 ()Ljava/lang/Object;
+	public final fun component3 ()Ldev/mattramotar/atom/runtime/store/AtomStoreOwner;
+	public final fun component4 ()Ldev/mattramotar/atom/runtime/factory/AtomFactoryRegistry;
+	public final fun component5 ()Ldev/mattramotar/atom/runtime/state/StateHandleFactory;
+	public final fun copy (Ljava/lang/Object;Ljava/lang/Object;Ldev/mattramotar/atom/runtime/store/AtomStoreOwner;Ldev/mattramotar/atom/runtime/factory/AtomFactoryRegistry;Ldev/mattramotar/atom/runtime/state/StateHandleFactory;)Ldev/mattramotar/atom/runtime/compose/AtomParamsKey;
+	public static synthetic fun copy$default (Ldev/mattramotar/atom/runtime/compose/AtomParamsKey;Ljava/lang/Object;Ljava/lang/Object;Ldev/mattramotar/atom/runtime/store/AtomStoreOwner;Ldev/mattramotar/atom/runtime/factory/AtomFactoryRegistry;Ldev/mattramotar/atom/runtime/state/StateHandleFactory;ILjava/lang/Object;)Ldev/mattramotar/atom/runtime/compose/AtomParamsKey;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInstanceKey ()Ljava/lang/Object;
+	public final fun getParams ()Ljava/lang/Object;
+	public final fun getRegistry ()Ldev/mattramotar/atom/runtime/factory/AtomFactoryRegistry;
+	public final fun getStateHandleFactory ()Ldev/mattramotar/atom/runtime/state/StateHandleFactory;
+	public final fun getStoreOwner ()Ldev/mattramotar/atom/runtime/store/AtomStoreOwner;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/mattramotar/atom/runtime/compose/CompositionLocalsKt {
+	public static final fun getLocalAtomContainer ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+	public static final fun getLocalAtomFactories ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+	public static final fun getLocalAtomStoreOwner ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+	public static final fun getLocalStateHandleFactory ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+}
+
+public abstract interface class dev/mattramotar/atom/runtime/di/AtomContainer {
+	public abstract fun resolve (Lkotlin/reflect/KClass;Ljava/lang/String;)Ljava/lang/Object;
+	public static synthetic fun resolve$default (Ldev/mattramotar/atom/runtime/di/AtomContainer;Lkotlin/reflect/KClass;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class dev/mattramotar/atom/runtime/di/AtomContainer$DefaultImpls {
+	public static synthetic fun resolve$default (Ldev/mattramotar/atom/runtime/di/AtomContainer;Lkotlin/reflect/KClass;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public abstract class dev/mattramotar/atom/runtime/factory/AnyAtomFactoryEntry {
+	public static final field $stable I
+	public fun <init> ()V
+	public abstract fun createAny (Lkotlinx/coroutines/CoroutineScope;Ldev/mattramotar/atom/runtime/state/StateHandle;Ljava/lang/Object;)Ldev/mattramotar/atom/runtime/AtomLifecycle;
+	public abstract fun getAtomClass ()Lkotlin/reflect/KClass;
+	public abstract fun getParamsClass ()Lkotlin/reflect/KClass;
+	public abstract fun getSerializerAny ()Ldev/mattramotar/atom/runtime/serialization/StateSerializer;
+	public abstract fun getStateClass ()Lkotlin/reflect/KClass;
+	public abstract fun initialAny (Ljava/lang/Object;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/mattramotar/atom/runtime/factory/AtomFactory {
+	public abstract fun create (Lkotlinx/coroutines/CoroutineScope;Ldev/mattramotar/atom/runtime/state/StateHandle;Ljava/lang/Object;)Ldev/mattramotar/atom/runtime/AtomLifecycle;
+	public abstract fun getAtomClass ()Lkotlin/reflect/KClass;
+	public abstract fun getParamsClass ()Lkotlin/reflect/KClass;
+	public abstract fun getSerializer ()Ldev/mattramotar/atom/runtime/serialization/StateSerializer;
+	public abstract fun getStateClass ()Lkotlin/reflect/KClass;
+	public abstract fun initial (Ljava/lang/Object;)Ljava/lang/Object;
+}
+
+public class dev/mattramotar/atom/runtime/factory/AtomFactoryEntry : dev/mattramotar/atom/runtime/factory/AnyAtomFactoryEntry {
+	public static final field $stable I
+	public fun <init> (Lkotlin/reflect/KClass;Lkotlin/reflect/KClass;Lkotlin/reflect/KClass;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function1;Ldev/mattramotar/atom/runtime/serialization/StateSerializer;)V
+	public synthetic fun <init> (Lkotlin/reflect/KClass;Lkotlin/reflect/KClass;Lkotlin/reflect/KClass;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function1;Ldev/mattramotar/atom/runtime/serialization/StateSerializer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun createAny (Lkotlinx/coroutines/CoroutineScope;Ldev/mattramotar/atom/runtime/state/StateHandle;Ljava/lang/Object;)Ldev/mattramotar/atom/runtime/AtomLifecycle;
+	public fun getAtomClass ()Lkotlin/reflect/KClass;
+	public fun getParamsClass ()Lkotlin/reflect/KClass;
+	public fun getSerializerAny ()Ldev/mattramotar/atom/runtime/serialization/StateSerializer;
+	public fun getStateClass ()Lkotlin/reflect/KClass;
+	public final fun getTypedStateClass ()Lkotlin/reflect/KClass;
+	public fun initialAny (Ljava/lang/Object;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/mattramotar/atom/runtime/factory/AtomFactoryRegistry {
+	public abstract fun entryFor (Lkotlin/reflect/KClass;)Ldev/mattramotar/atom/runtime/factory/AnyAtomFactoryEntry;
+}
+
+public final class dev/mattramotar/atom/runtime/factory/Atoms {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/mattramotar/atom/runtime/factory/Atoms;
+}
+
+public final class dev/mattramotar/atom/runtime/factory/EmptyAtomFactoryRegistry : dev/mattramotar/atom/runtime/factory/AtomFactoryRegistry {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/mattramotar/atom/runtime/factory/EmptyAtomFactoryRegistry;
+	public fun entryFor (Lkotlin/reflect/KClass;)Ldev/mattramotar/atom/runtime/factory/AnyAtomFactoryEntry;
+}
+
+public final class dev/mattramotar/atom/runtime/fsm/EffectType : java/lang/Enum {
+	public static final field COMPUTE Ldev/mattramotar/atom/runtime/fsm/EffectType;
+	public static final field DB Ldev/mattramotar/atom/runtime/fsm/EffectType;
+	public static final field NETWORK Ldev/mattramotar/atom/runtime/fsm/EffectType;
+	public static final field REDUCE Ldev/mattramotar/atom/runtime/fsm/EffectType;
+	public static final field RENDER Ldev/mattramotar/atom/runtime/fsm/EffectType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/mattramotar/atom/runtime/fsm/EffectType;
+	public static fun values ()[Ldev/mattramotar/atom/runtime/fsm/EffectType;
+}
+
+public abstract interface class dev/mattramotar/atom/runtime/fsm/Event {
+}
+
+public abstract interface class dev/mattramotar/atom/runtime/fsm/Intent {
+	public fun getIntentName ()Ljava/lang/String;
+}
+
+public final class dev/mattramotar/atom/runtime/fsm/Intent$DefaultImpls {
+	public static fun getIntentName (Ldev/mattramotar/atom/runtime/fsm/Intent;)Ljava/lang/String;
+}
+
+public abstract interface class dev/mattramotar/atom/runtime/fsm/SideEffect {
+	public fun getEffectName ()Ljava/lang/String;
+	public fun getEffectType ()Ldev/mattramotar/atom/runtime/fsm/EffectType;
+}
+
+public final class dev/mattramotar/atom/runtime/fsm/SideEffect$DefaultImpls {
+	public static fun getEffectName (Ldev/mattramotar/atom/runtime/fsm/SideEffect;)Ljava/lang/String;
+	public static fun getEffectType (Ldev/mattramotar/atom/runtime/fsm/SideEffect;)Ldev/mattramotar/atom/runtime/fsm/EffectType;
+}
+
+public final class dev/mattramotar/atom/runtime/fsm/Transition {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/Object;Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/lang/Object;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/Object;
+	public final fun component2 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/Object;Ljava/util/List;)Ldev/mattramotar/atom/runtime/fsm/Transition;
+	public static synthetic fun copy$default (Ldev/mattramotar/atom/runtime/fsm/Transition;Ljava/lang/Object;Ljava/util/List;ILjava/lang/Object;)Ldev/mattramotar/atom/runtime/fsm/Transition;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEffects ()Ljava/util/List;
+	public final fun getTo ()Ljava/lang/Object;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/mattramotar/atom/runtime/fsm/TransitionBuilder {
+	public static final field $stable I
+	public fun <init> ()V
+	public final fun build (Ljava/lang/Object;)Ldev/mattramotar/atom/runtime/fsm/Transition;
+	public final fun emit (Ldev/mattramotar/atom/runtime/fsm/SideEffect;)V
+	public final fun transitionTo (Ljava/lang/Object;)V
+}
+
+public final class dev/mattramotar/atom/runtime/fsm/TransitionScope {
+	public static final field $stable I
+	public fun <init> ()V
+	public final fun apply (Ljava/lang/Object;Ldev/mattramotar/atom/runtime/fsm/Event;)Ldev/mattramotar/atom/runtime/fsm/Transition;
+	public final fun getHandlers ()Ljava/util/List;
+}
+
+public final class dev/mattramotar/atom/runtime/fsm/TransitionScope$Handler {
+	public static final field $stable I
+	public fun <init> (Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;)V
+	public final fun component1 ()Lkotlin/jvm/functions/Function1;
+	public final fun component2 ()Lkotlin/jvm/functions/Function2;
+	public final fun copy (Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;)Ldev/mattramotar/atom/runtime/fsm/TransitionScope$Handler;
+	public static synthetic fun copy$default (Ldev/mattramotar/atom/runtime/fsm/TransitionScope$Handler;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function2;ILjava/lang/Object;)Ldev/mattramotar/atom/runtime/fsm/TransitionScope$Handler;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBlock ()Lkotlin/jvm/functions/Function2;
+	public final fun getPredicate ()Lkotlin/jvm/functions/Function1;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/mattramotar/atom/runtime/serialization/KotlinxStateSerializer : dev/mattramotar/atom/runtime/serialization/StateSerializer {
+	public static final field $stable I
+	public static final field Companion Ldev/mattramotar/atom/runtime/serialization/KotlinxStateSerializer$Companion;
+	public fun <init> (Lkotlinx/serialization/KSerializer;Lkotlinx/serialization/json/Json;)V
+	public synthetic fun <init> (Lkotlinx/serialization/KSerializer;Lkotlinx/serialization/json/Json;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun deserialize (Ljava/lang/String;)Ljava/lang/Object;
+	public fun serialize (Ljava/lang/Object;)Ljava/lang/String;
+}
+
+public final class dev/mattramotar/atom/runtime/serialization/KotlinxStateSerializer$Companion {
+	public final fun getDefaultJson ()Lkotlinx/serialization/json/Json;
+}
+
+public abstract interface class dev/mattramotar/atom/runtime/serialization/StateSerializer {
+	public abstract fun deserialize (Ljava/lang/String;)Ljava/lang/Object;
+	public abstract fun serialize (Ljava/lang/Object;)Ljava/lang/String;
+}
+
+public final class dev/mattramotar/atom/runtime/state/InMemoryStateHandle : dev/mattramotar/atom/runtime/state/StateHandle {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/Object;)V
+	public fun get ()Ljava/lang/Object;
+	public fun getFlow ()Lkotlinx/coroutines/flow/StateFlow;
+	public fun set (Ljava/lang/Object;)V
+	public fun update (Lkotlin/jvm/functions/Function1;)Ljava/lang/Object;
+}
+
+public final class dev/mattramotar/atom/runtime/state/InMemoryStateHandleFactory : dev/mattramotar/atom/runtime/state/StateHandleFactory {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/mattramotar/atom/runtime/state/InMemoryStateHandleFactory;
+	public fun create (Ldev/mattramotar/atom/runtime/AtomKey;Lkotlin/reflect/KClass;Lkotlin/jvm/functions/Function0;Ldev/mattramotar/atom/runtime/serialization/StateSerializer;)Ldev/mattramotar/atom/runtime/state/StateHandle;
+}
+
+public abstract interface class dev/mattramotar/atom/runtime/state/StateHandle {
+	public abstract fun get ()Ljava/lang/Object;
+	public abstract fun getFlow ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun set (Ljava/lang/Object;)V
+	public abstract fun update (Lkotlin/jvm/functions/Function1;)Ljava/lang/Object;
+}
+
+public abstract interface class dev/mattramotar/atom/runtime/state/StateHandleFactory {
+	public abstract fun create (Ldev/mattramotar/atom/runtime/AtomKey;Lkotlin/reflect/KClass;Lkotlin/jvm/functions/Function0;Ldev/mattramotar/atom/runtime/serialization/StateSerializer;)Ldev/mattramotar/atom/runtime/state/StateHandle;
+}
+
+public final class dev/mattramotar/atom/runtime/store/AtomStore {
+	public static final field $stable I
+	public fun <init> ()V
+	public final fun acquire (Ldev/mattramotar/atom/runtime/AtomKey;Lkotlin/jvm/functions/Function0;)Ldev/mattramotar/atom/runtime/AtomLifecycle;
+	public final fun clear ()Ljava/util/List;
+	public final fun release (Ldev/mattramotar/atom/runtime/AtomKey;)Ldev/mattramotar/atom/runtime/store/AtomStore$Managed;
+}
+
+public final class dev/mattramotar/atom/runtime/store/AtomStore$Managed {
+	public static final field $stable I
+	public fun <init> (Ldev/mattramotar/atom/runtime/AtomLifecycle;Lkotlinx/coroutines/Job;I)V
+	public final fun component1 ()Ldev/mattramotar/atom/runtime/AtomLifecycle;
+	public final fun component2 ()Lkotlinx/coroutines/Job;
+	public final fun component3 ()I
+	public final fun copy (Ldev/mattramotar/atom/runtime/AtomLifecycle;Lkotlinx/coroutines/Job;I)Ldev/mattramotar/atom/runtime/store/AtomStore$Managed;
+	public static synthetic fun copy$default (Ldev/mattramotar/atom/runtime/store/AtomStore$Managed;Ldev/mattramotar/atom/runtime/AtomLifecycle;Lkotlinx/coroutines/Job;IILjava/lang/Object;)Ldev/mattramotar/atom/runtime/store/AtomStore$Managed;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getJob ()Lkotlinx/coroutines/Job;
+	public final fun getLifecycle ()Ldev/mattramotar/atom/runtime/AtomLifecycle;
+	public final fun getRefs ()I
+	public fun hashCode ()I
+	public final fun setRefs (I)V
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/mattramotar/atom/runtime/store/AtomStoreOwner {
+	public abstract fun getAtomStore ()Ldev/mattramotar/atom/runtime/store/AtomStore;
+}
+

@@ -1,0 +1,23 @@
+public abstract class dev/mattramotar/atom/gradle/AtomExtension {
+	public fun <init> ()V
+	public abstract fun getCompose ()Lorg/gradle/api/provider/Property;
+	public abstract fun getDi ()Lorg/gradle/api/provider/Property;
+	public abstract fun getInjectAnnotation ()Lorg/gradle/api/provider/Property;
+	public abstract fun getScope ()Lorg/gradle/api/provider/Property;
+	public abstract fun getStrict ()Lorg/gradle/api/provider/Property;
+	public abstract fun getVersion ()Lorg/gradle/api/provider/Property;
+}
+
+public final class dev/mattramotar/atom/gradle/AtomPlugin : org/gradle/api/Plugin {
+	public fun <init> ()V
+	public synthetic fun apply (Ljava/lang/Object;)V
+	public fun apply (Lorg/gradle/api/Project;)V
+}
+
+public final class dev/mattramotar/atom/gradle/DI : java/lang/Enum {
+	public static final field MANUAL Ldev/mattramotar/atom/gradle/DI;
+	public static final field METRO Ldev/mattramotar/atom/gradle/DI;
+	public static fun valueOf (Ljava/lang/String;)Ldev/mattramotar/atom/gradle/DI;
+	public static fun values ()[Ldev/mattramotar/atom/gradle/DI;
+}
+

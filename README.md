@@ -33,6 +33,12 @@ If `./gradlew check --continue` fails with `SDK location not found`, set one of:
 sdk.dir=/absolute/path/to/android/sdk
 ```
 
+## API compatibility
+
+Atom enforces binary compatibility for `1.x` public APIs in CI using Kotlin Binary Compatibility Validator.
+
+See `docs/API_COMPATIBILITY_POLICY.md` for scope, guarantees, and baseline update rules.
+
 ## Quickstart (KMP)
 
 ```kotlin
@@ -103,6 +109,7 @@ class PostAtom(
 
 ## Local verification
 
+- `./gradlew apiCheck --no-configuration-cache`
 - `./gradlew :ksp:jvmTest :ksp:allTests :gradle-plugin:test --continue`
 - `./gradlew :runtime:tasks --all`
 - `./gradlew :metro:tasks --all`
