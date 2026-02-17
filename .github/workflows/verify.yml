@@ -132,8 +132,8 @@ jobs:
       - name: Grant execute permission for Gradlew
         run: chmod +x gradlew
 
-      - name: Run native link smoke checks
-        run: ./gradlew :runtime:linkDebugTestIosSimulatorArm64 :runtime:linkDebugTestIosX64 :metro:linkDebugTestIosSimulatorArm64 :metro:linkDebugTestIosX64 :sample:linkDebugTestIosSimulatorArm64 :sample:linkDebugTestIosX64 --continue --no-configuration-cache
+      - name: Run native test and link smoke checks
+        run: ./gradlew :runtime:iosSimulatorArm64Test :metro:iosSimulatorArm64Test :sample:iosSimulatorArm64Test :runtime:linkDebugTestIosX64 :metro:linkDebugTestIosX64 :sample:linkDebugTestIosX64 --continue --no-configuration-cache
 
       - name: Upload native reports
         if: ${{ always() }}
