@@ -1,14 +1,53 @@
 name: Publish Artifacts
 
 on:
+  workflow_dispatch:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  verify-release:
+    if: ${{ github.repository == 'matt-ramotar/atom' }}
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Grant execute permission for Gradlew
+        run: chmod +x gradlew
+
+      - name: Validate release version is non-snapshot
+        run: |
+          VERSION=$(grep '^atom = "' gradle/libs.versions.toml | sed 's/.*= "\(.*\)"/\1/')
+          if [[ "$VERSION" == *-SNAPSHOT ]]; then
+            echo "::error::Refusing release publish for SNAPSHOT version: $VERSION"
+            exit 1
+          fi
+          echo "Validated release version: $VERSION"
+
+      - name: Verify release gates
+        run: ./gradlew check --continue :ksp:jvmTest :ksp:allTests :gradle-plugin:test --no-configuration-cache
+
   publish:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'matt-ramotar/atom' }}
+    if: ${{ github.repository == 'matt-ramotar/atom' }}
+    needs: verify-release
     runs-on: macos-latest
 
     strategy:
@@ -32,26 +71,26 @@ jobs:
             path: ":gradle-plugin"
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
-          java-version: '17'
+          distribution: "zulu"
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Grant execute permission for Gradlew
         run: chmod +x gradlew
 
-      - name: Set Version Environment Variables
+      - name: Log release version
         run: |
-          # Extract version from libs.versions.toml based on the version_key
           VERSION=$(grep "^${{ matrix.module-config.version_key }} = " gradle/libs.versions.toml | sed 's/.*= "\(.*\)"/\1/')
-          echo "${{ matrix.module-config.version_env }}=$VERSION" >> $GITHUB_ENV
-          echo "Extracted version for ${{ matrix.module-config.name }}: $VERSION"          
+          echo "Publishing ${{ matrix.module-config.name }} version: $VERSION"
 
-      - name: Publish Artifacts to Maven Central
-        if: ${{ !endsWith(env[matrix.module-config.version_env], '-SNAPSHOT') }}
+      - name: Publish artifact to Maven Central
         run: ./gradlew ${{ matrix.module-config.path }}:publishAndReleaseToMavenCentral --no-configuration-cache
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.SONATYPE_USERNAME }}

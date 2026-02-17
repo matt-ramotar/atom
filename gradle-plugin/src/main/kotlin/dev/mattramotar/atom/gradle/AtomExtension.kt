@@ -61,7 +61,7 @@ abstract class AtomExtension {
     abstract val injectAnnotation: Property<String>
 
     init {
-        di.convention(DI.METRO)
+        di.convention(DI.MANUAL)
         compose.convention(true)
         strict.convention(false)
         scope.convention("dev.zacsweers.metro.AppScope")
