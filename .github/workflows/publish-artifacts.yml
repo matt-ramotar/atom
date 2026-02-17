@@ -42,8 +42,19 @@ jobs:
           fi
           echo "Validated release version: $VERSION"
 
-      - name: Verify release gates
-        run: ./gradlew check --continue :ksp:jvmTest :ksp:allTests :gradle-plugin:test --no-configuration-cache
+      - name: Verify JVM and plugin gates
+        run: ./gradlew :ksp:jvmTest :ksp:allTests :gradle-plugin:test :runtime:jvmTest :metro:jvmTest :sample:jvmTest --continue --no-configuration-cache
+
+      - name: Verify Android smoke gates
+        run: ./gradlew :runtime:testDebugUnitTest :metro:testDebugUnitTest :sample:testDebugUnitTest :runtime:lintDebug :metro:lintDebug :sample:lintDebug --continue --no-configuration-cache
+
+      - name: Verify JS smoke gates
+        env:
+          CHROME_BIN: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+        run: ./gradlew :runtime:jsBrowserTest :runtime:jsTest :metro:jsTest :sample:jsTest --continue --no-configuration-cache
+
+      - name: Verify native smoke gates
+        run: ./gradlew :runtime:linkDebugTestIosSimulatorArm64 :runtime:linkDebugTestIosX64 :metro:linkDebugTestIosSimulatorArm64 :metro:linkDebugTestIosX64 :sample:linkDebugTestIosSimulatorArm64 :sample:linkDebugTestIosX64 --continue --no-configuration-cache
 
   publish:
     if: ${{ github.repository == 'matt-ramotar/atom' }}
