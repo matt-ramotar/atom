@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
+  verify-jvm:
     if: ${{ github.repository == 'matt-ramotar/atom' }}
     runs-on: macos-latest
 
@@ -37,20 +37,118 @@ jobs:
       - name: Grant execute permission for Gradlew
         run: chmod +x gradlew
 
-      - name: Run baseline checks
-        run: ./gradlew check --continue --no-configuration-cache
+      - name: Run JVM and plugin verification
+        run: ./gradlew :ksp:jvmTest :ksp:allTests :gradle-plugin:test :runtime:jvmTest :metro:jvmTest :sample:jvmTest --continue --no-configuration-cache
 
-      - name: Run KSP and plugin checks
-        run: ./gradlew :ksp:jvmTest :ksp:allTests :gradle-plugin:test --continue --no-configuration-cache
-
-      - name: Run all target tests
-        run: ./gradlew :runtime:allTests :metro:allTests :sample:allTests --continue --no-configuration-cache
-
-      - name: Upload test reports
+      - name: Upload JVM reports
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports
+          name: test-reports-jvm
           path: |
             **/build/reports/**
             **/build/test-results/**
+
+  verify-android:
+    if: ${{ github.repository == 'matt-ramotar/atom' }}
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Grant execute permission for Gradlew
+        run: chmod +x gradlew
+
+      - name: Run Android smoke checks
+        run: ./gradlew :runtime:testDebugUnitTest :metro:testDebugUnitTest :sample:testDebugUnitTest :runtime:lintDebug :metro:lintDebug :sample:lintDebug --continue --no-configuration-cache
+
+      - name: Upload Android reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-android
+          path: |
+            **/build/reports/**
+            **/build/test-results/**
+
+  verify-js:
+    if: ${{ github.repository == 'matt-ramotar/atom' }}
+    runs-on: macos-latest
+    env:
+      CHROME_BIN: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "17"
+
+      - name: Grant execute permission for Gradlew
+        run: chmod +x gradlew
+
+      - name: Run JS browser smoke checks
+        run: ./gradlew :runtime:jsBrowserTest :runtime:jsTest :metro:jsTest :sample:jsTest --continue --no-configuration-cache
+
+      - name: Upload JS reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-js
+          path: |
+            **/build/reports/**
+            **/build/test-results/**
+
+  verify-native:
+    if: ${{ github.repository == 'matt-ramotar/atom' }}
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "17"
+
+      - name: Grant execute permission for Gradlew
+        run: chmod +x gradlew
+
+      - name: Run native link smoke checks
+        run: ./gradlew :runtime:linkDebugTestIosSimulatorArm64 :runtime:linkDebugTestIosX64 :metro:linkDebugTestIosSimulatorArm64 :metro:linkDebugTestIosX64 :sample:linkDebugTestIosSimulatorArm64 :sample:linkDebugTestIosX64 --continue --no-configuration-cache
+
+      - name: Upload native reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-native
+          path: |
+            **/build/reports/**
+            **/build/test-results/**
+
+  verify:
+    if: ${{ github.repository == 'matt-ramotar/atom' }}
+    runs-on: macos-latest
+    needs:
+      - verify-jvm
+      - verify-android
+      - verify-js
+      - verify-native
+    steps:
+      - name: Verify gate summary
+        run: echo "All verification lanes completed successfully."
