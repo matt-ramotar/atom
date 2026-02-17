@@ -26,6 +26,11 @@ kotlin {
         jvmTest {
             dependencies {
                 implementation(kotlin("test"))
+                implementation(libs.kctfork.core)
+                implementation(libs.kctfork.ksp)
+                implementation(libs.metro.runtime)
+                implementation(projects.atom.runtime)
+                implementation(projects.atom.metro)
             }
 
             kotlin.srcDir("src/test/kotlin")
