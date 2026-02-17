@@ -26,3 +26,4 @@ docs/internal
 **yarn.lock
 kotlin-js-store/
 *gradlew.bat
+.agents/

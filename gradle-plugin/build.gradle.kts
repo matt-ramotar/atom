@@ -20,9 +20,12 @@ java {
 }
 
 dependencies {
-    compileOnly(libs.kotlin.gradle.plugin)
+    implementation(libs.kotlin.gradle.plugin)
     compileOnly(libs.android.gradle.plugin)
-    compileOnly(libs.symbol.processing.gradle.plugin)
+    implementation(libs.symbol.processing.gradle.plugin)
+
+    testImplementation(gradleTestKit())
+    testImplementation(libs.junit)
 }
 
 gradlePlugin {

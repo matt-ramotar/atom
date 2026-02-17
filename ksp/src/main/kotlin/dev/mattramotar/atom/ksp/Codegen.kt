@@ -18,7 +18,7 @@ internal object RTypes {
     private const val P_ATOM_SERIALIZATION = "$P_ATOM.serialization"
     private const val P_ATOM_STATE = "$P_ATOM.state"
     private const val P_ATOM_STORE = "$P_ATOM.store"
-    private const val P_DI = "dev.mattramotar.atom.di"
+    private const val P_DI = "dev.mattramotar.atom.runtime.di"
     private const val P_METRO = "dev.zacsweers.metro"
 
     // Runtime classes
