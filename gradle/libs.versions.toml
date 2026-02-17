@@ -27,6 +27,7 @@ junit = "4.13.2"
 mokkery = "2.7.3"
 androidx-lifecycle = "2.9.4"
 metro = "0.6.7"
+binary-compatibility-validator = "0.18.1"
 
 [libraries]
 android-gradle-plugin = { group = "com.android.tools.build", name = "gradle", version.ref = "agp" }
@@ -76,3 +77,4 @@ kotlin-plugin-parcelize = { id = "org.jetbrains.kotlin.plugin.parcelize", versio
 maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "maven-publish-plugin" }
 mokkery = {id = "dev.mokkery", version.ref = "mokkery"}
 metro = { id = "dev.zacsweers.metro", version.ref = "metro" }
+binary-compatibility-validator = { id = "org.jetbrains.kotlinx.binary-compatibility-validator", version.ref = "binary-compatibility-validator" }
