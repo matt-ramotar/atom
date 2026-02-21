@@ -88,8 +88,9 @@ package dev.mattramotar.atom.runtime
  * - Unsubscribing from data sources
  * - Logging lifecycle events
  *
- * **Note**: The atom's coroutine `scope` is automatically cancelled before [onStop] is called,
- * so explicit coroutine cancellation is unnecessary.
+ * **Note**: Built-in owners (for example Compose `atom()` and [dev.mattramotar.atom.runtime.child.ChildAtomProvider])
+ * cancel the atom's coroutine scope/job before [onStop] is invoked. If lifecycle callbacks are
+ * invoked manually, cancellation sequencing is the caller's responsibility.
  *
  * ```kotlin
  * override fun onStop() {
@@ -140,9 +141,9 @@ package dev.mattramotar.atom.runtime
  *
  * ## Thread Safety
  *
- * - [onStart], [onStop], and [onDispose] may be called from different threads
- * - The runtime serializes lifecycle callbacks - no concurrent invocations
- * - Callbacks are invoked outside internal locks
+ * - [onStart], [onStop], and [onDispose] may be called from different threads.
+ * - Built-in owners serialize lifecycle callbacks per atom instance.
+ * - Callbacks are invoked outside AtomStore internal locks.
  *
  * ## Default Implementations
  *
@@ -175,7 +176,8 @@ interface AtomLifecycle {
      *
      * **Threading**: Called on the thread that releases the last reference.
      *
-     * **Error Handling**: Exceptions are caught and ignored by the runtime to prevent disposal failures.
+     * **Error Handling**: Built-in owners typically catch and ignore [onStop] exceptions during
+     * disposal paths. If callbacks are invoked manually, exceptions may propagate.
      */
     fun onStop() {}
 
@@ -187,7 +189,8 @@ interface AtomLifecycle {
      *
      * **Threading**: Called on the thread that released the last reference, after [onStop].
      *
-     * **Error Handling**: Exceptions are caught and ignored. Use `runCatching` for defensive cleanup.
+     * **Error Handling**: Built-in owners typically catch and ignore [onDispose] exceptions during
+     * disposal paths. If callbacks are invoked manually, exceptions may propagate.
      */
     fun onDispose() {}
 }

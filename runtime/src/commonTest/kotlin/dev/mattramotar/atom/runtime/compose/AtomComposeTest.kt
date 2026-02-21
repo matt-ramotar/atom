@@ -76,6 +76,47 @@ class AtomComposeTest {
     }
 
     @Test
+    fun atomRecreatesAndDisposesWhenKeyChanges() = runTest {
+        val created = mutableListOf<TestAtom>()
+        val keyState = mutableStateOf("one")
+        val observedAtom = mutableStateOf<TestAtom?>(null)
+        val registry = testRegistry(created)
+        val owner = testOwner()
+
+        runComposition(
+            content = {
+                AtomCompositionLocals(factories = registry, owner = owner) {
+                    val atom = atom<TestAtom>(key = keyState.value, params = TestParams("stable"))
+                    SideEffect { observedAtom.value = atom }
+                }
+            }
+        ) { frameClock ->
+            frameClock.advance()
+
+            val first = requireNotNull(observedAtom.value)
+            assertEquals(1, created.size)
+            assertEquals(1, first.starts)
+            assertEquals(0, first.stops)
+            assertEquals(0, first.disposes)
+
+            keyState.value = "two"
+            Snapshot.sendApplyNotifications()
+            frameClock.advance()
+
+            val second = requireNotNull(observedAtom.value)
+            assertNotSame(first, second)
+            assertEquals(2, created.size)
+            assertEquals(1, first.stops)
+            assertEquals(1, first.disposes)
+            assertEquals(listOf("start", "stop", "dispose"), first.callbacks)
+            assertEquals(1, second.starts)
+            assertEquals(0, second.stops)
+            assertEquals(0, second.disposes)
+            assertEquals(listOf("start"), second.callbacks)
+        }
+    }
+
+    @Test
     fun atomKeepsInstanceWhenParamsAreStable() = runTest {
         val created = mutableListOf<TestAtom>()
         val paramsState = mutableStateOf(TestParams("stable"))
@@ -374,17 +415,21 @@ class AtomComposeTest {
         var starts = 0
         var stops = 0
         var disposes = 0
+        val callbacks = mutableListOf<String>()
 
         override fun onStart() {
             starts += 1
+            callbacks += "start"
         }
 
         override fun onStop() {
             stops += 1
+            callbacks += "stop"
         }
 
         override fun onDispose() {
             disposes += 1
+            callbacks += "dispose"
         }
     }
 

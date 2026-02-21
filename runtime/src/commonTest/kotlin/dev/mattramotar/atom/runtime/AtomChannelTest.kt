@@ -122,6 +122,33 @@ class AtomChannelTest {
     }
 
     @Test
+    fun eventOverflowDropsOldestWhenConfigured() = runTest {
+        val config = AtomChannelConfig(
+            events = AtomChannelConfig.ChannelConfig(
+                capacity = 1,
+                onBufferOverflow = BufferOverflow.DROP_OLDEST
+            )
+        )
+        val atom = EventOverflowAtom(
+            scope = CoroutineScope(coroutineContext),
+            handle = InMemoryStateHandle(EventOverflowState()),
+            channelConfig = config
+        )
+        atom.onStart()
+
+        atom.emitId(1)
+        atom.emitId(2)
+        atom.emitId(3)
+        runCurrent()
+
+        val state = atom.get()
+        assertEquals(1, state.processed)
+        assertEquals(3, state.lastId)
+        atom.onStop()
+        runCurrent()
+    }
+
+    @Test
     fun atomCanRestartAfterStop() = runTest {
         val atom = TestAtom(
             scope = CoroutineScope(coroutineContext),
@@ -195,6 +222,24 @@ class AtomChannelTest {
         }
     }
 
+    @Test
+    fun unlimitedEffectChannelIsRejected() = runTest {
+        val config = AtomChannelConfig(
+            effects = AtomChannelConfig.ChannelConfig(
+                capacity = Channel.UNLIMITED,
+                onBufferOverflow = BufferOverflow.SUSPEND
+            )
+        )
+
+        assertFailsWith<IllegalArgumentException> {
+            TestAtom(
+                scope = CoroutineScope(coroutineContext),
+                handle = InMemoryStateHandle(TestState()),
+                channelConfig = config
+            )
+        }
+    }
+
     private object TestIntent : Intent
 
     private data class TestState(val count: Int = 0)
@@ -202,6 +247,13 @@ class AtomChannelTest {
     private data class TestEvent(val effects: List<TestEffect>) : Event
 
     private data class TestEffect(val id: Int) : SideEffect
+
+    private data class EventOverflowState(
+        val lastId: Int = 0,
+        val processed: Int = 0
+    )
+
+    private data class EventOverflowEvent(val id: Int) : Event
 
     private class TestAtom(
         scope: CoroutineScope,
@@ -219,6 +271,28 @@ class AtomChannelTest {
             return Transition(
                 to = state.copy(count = state.count + 1),
                 effects = event.effects
+            )
+        }
+    }
+
+    private class EventOverflowAtom(
+        scope: CoroutineScope,
+        handle: InMemoryStateHandle<EventOverflowState>,
+        channelConfig: AtomChannelConfig,
+    ) : Atom<EventOverflowState, TestIntent, EventOverflowEvent, TestEffect>(scope, handle, channelConfig) {
+        fun emitId(id: Int) {
+            dispatch(EventOverflowEvent(id))
+        }
+
+        override fun reduce(
+            state: EventOverflowState,
+            event: EventOverflowEvent
+        ): Transition<EventOverflowState, TestEffect> {
+            return Transition(
+                to = state.copy(
+                    lastId = event.id,
+                    processed = state.processed + 1
+                )
             )
         }
     }
