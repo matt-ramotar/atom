@@ -25,6 +25,7 @@ import kotlin.reflect.KClass
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotSame
+import kotlin.test.assertSame
 
 @OptIn(ExperimentalCoroutinesApi::class, ExperimentalComposeApi::class)
 class TaskAtomComposeIdentityTest {
@@ -112,6 +113,54 @@ class TaskAtomComposeIdentityTest {
             val second = requireNotNull(observedAtom.value)
             assertNotSame(first, second)
             assertEquals("Draft", second.get().task.title)
+        }
+    }
+
+    @Test
+    fun taskAtomKeepsSameInstanceWhenKeyAndParamsAreStable() = runTest {
+        val repository = InMemorySampleTaskRepository(
+            initialData = mapOf(
+                SAMPLE_BOARD_ID to listOf(
+                    SampleTask(id = "task-1", title = "Draft", completed = false)
+                )
+            )
+        )
+        val diagnostics = InMemorySampleDiagnostics()
+        val registry = testRegistry(repository = repository, diagnostics = diagnostics)
+        val owner = testOwner()
+        val observedAtom = mutableStateOf<TaskAtom?>(null)
+        val observedTick = mutableStateOf(0)
+        val recomposeTick = mutableStateOf(0)
+        val params = SampleTaskParams(
+            task = SampleTask(id = "task-1", title = "Draft", completed = false),
+            boardId = SAMPLE_BOARD_ID,
+            revision = 0
+        )
+
+        runComposition(
+            content = {
+                AtomCompositionLocals(factories = registry, owner = owner) {
+                    val atom = atom<TaskAtom>(key = "task-1", params = params)
+                    val tick = recomposeTick.value
+                    SideEffect {
+                        observedAtom.value = atom
+                        observedTick.value = tick
+                    }
+                }
+            }
+        ) { frameClock ->
+            frameClock.advance()
+
+            val first = requireNotNull(observedAtom.value)
+            assertEquals(0, observedTick.value)
+
+            recomposeTick.value = 1
+            Snapshot.sendApplyNotifications()
+            frameClock.advance()
+
+            val second = requireNotNull(observedAtom.value)
+            assertSame(first, second)
+            assertEquals(1, observedTick.value)
         }
     }
 
