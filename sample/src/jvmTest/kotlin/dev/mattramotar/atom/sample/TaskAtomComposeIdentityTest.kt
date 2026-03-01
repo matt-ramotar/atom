@@ -74,6 +74,47 @@ class TaskAtomComposeIdentityTest {
         }
     }
 
+    @Test
+    fun taskAtomRecreatesWhenKeyChangesWithSameParams() = runTest {
+        val repository = InMemorySampleTaskRepository(
+            initialData = mapOf(
+                SAMPLE_BOARD_ID to listOf(
+                    SampleTask(id = "task-1", title = "Draft", completed = false)
+                )
+            )
+        )
+        val diagnostics = InMemorySampleDiagnostics()
+        val registry = testRegistry(repository = repository, diagnostics = diagnostics)
+        val owner = testOwner()
+        val observedAtom = mutableStateOf<TaskAtom?>(null)
+        val keyState = mutableStateOf("task-1")
+        val params = SampleTaskParams(
+            task = SampleTask(id = "task-1", title = "Draft", completed = false),
+            boardId = SAMPLE_BOARD_ID,
+            revision = 0
+        )
+
+        runComposition(
+            content = {
+                AtomCompositionLocals(factories = registry, owner = owner) {
+                    val atom = atom<TaskAtom>(key = keyState.value, params = params)
+                    SideEffect { observedAtom.value = atom }
+                }
+            }
+        ) { frameClock ->
+            frameClock.advance()
+
+            val first = requireNotNull(observedAtom.value)
+            keyState.value = "task-1-alt"
+            Snapshot.sendApplyNotifications()
+            frameClock.advance()
+
+            val second = requireNotNull(observedAtom.value)
+            assertNotSame(first, second)
+            assertEquals("Draft", second.get().task.title)
+        }
+    }
+
     private suspend fun TestScope.runComposition(
         content: @Composable () -> Unit,
         block: suspend (FrameClockDriver) -> Unit
