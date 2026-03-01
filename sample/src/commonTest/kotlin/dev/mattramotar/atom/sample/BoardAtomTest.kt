@@ -160,6 +160,38 @@ class BoardAtomTest {
     }
 
     @Test
+    fun childSyncClearsAllChildrenWhenRepositoryBecomesEmpty() = runTest {
+        val seed = listOf(
+            SampleTask(id = "task-1", title = "one"),
+            SampleTask(id = "task-2", title = "two")
+        )
+        val (atom, repository, diagnostics) = createBoardAtom(
+            scope = CoroutineScope(coroutineContext),
+            seed = seed
+        )
+
+        atom.intent(BoardIntent.Load)
+        drainScheduler()
+
+        repository.sync(boardId = SAMPLE_BOARD_ID, tasks = emptyList())
+        atom.intent(BoardIntent.Load)
+        drainScheduler(cycles = 10)
+
+        val state = atom.get()
+        assertTrue(state.tasks.isEmpty())
+        assertTrue(state.visibleTasks.isEmpty())
+        assertEquals(null, state.selectedTaskId)
+        assertEquals(
+            listOf("BoardAtom[main-board]"),
+            diagnostics.snapshot().activeAtoms
+        )
+
+        atom.onStop()
+        atom.onDispose()
+        drainScheduler()
+    }
+
+    @Test
     fun diagnosticsRefreshIntentUpdatesBoardStateSnapshot() = runTest {
         val seed = listOf(SampleTask(id = "task-1", title = "one"))
         val (atom, _, _) = createBoardAtom(
@@ -283,6 +315,57 @@ class BoardAtomTest {
                 record.atom == "BoardAtom" && record.value == "task_saved:task-1"
             }
         )
+
+        atom.onStop()
+        atom.onDispose()
+        drainScheduler()
+    }
+
+    @Test
+    fun repeatedSyncLoadAndBurstCyclesRemainConsistent() = runTest {
+        val seed = listOf(
+            SampleTask(id = "task-1", title = "one"),
+            SampleTask(id = "task-2", title = "two"),
+            SampleTask(id = "task-3", title = "three")
+        )
+        val (atom, repository, _) = createBoardAtom(
+            scope = CoroutineScope(coroutineContext),
+            seed = seed
+        )
+        val syncBatches = listOf(
+            listOf(
+                SampleTask(id = "task-1", title = "one"),
+                SampleTask(id = "task-2", title = "two")
+            ),
+            listOf(SampleTask(id = "task-1", title = "one")),
+            emptyList(),
+            listOf(
+                SampleTask(id = "task-2", title = "two"),
+                SampleTask(id = "task-3", title = "three")
+            ),
+            emptyList()
+        )
+
+        atom.intent(BoardIntent.Load)
+        drainScheduler()
+
+        syncBatches.forEach { batch ->
+            repository.sync(boardId = SAMPLE_BOARD_ID, tasks = batch)
+            atom.intent(BoardIntent.Load)
+            drainScheduler(cycles = 8)
+            atom.intent(BoardIntent.SelectTask(batch.firstOrNull()?.id))
+            drainScheduler()
+            atom.intent(BoardIntent.TriggerBurst(iterations = 2))
+            drainScheduler(cycles = 20)
+
+            val state = atom.get()
+            assertEquals(batch.map { task -> task.id }.toSet(), state.tasks.map { task -> task.id }.toSet())
+            assertEquals(0, state.pendingBurstMutations)
+            assertEquals(
+                (listOf("BoardAtom[main-board]") + batch.map { task -> "TaskAtom[${task.id}]" }).sorted(),
+                state.diagnostics.activeAtoms
+            )
+        }
 
         atom.onStop()
         atom.onDispose()
