@@ -210,6 +210,85 @@ class BoardAtomTest {
         drainScheduler()
     }
 
+    @Test
+    fun triggerBurstWithoutSelectionIncrementsDroppedAndClearsPendingMutations() = runTest {
+        val seed = listOf(
+            SampleTask(id = "task-1", title = "one", completed = false),
+            SampleTask(id = "task-2", title = "two", completed = false)
+        )
+        val (atom, _, _) = createBoardAtom(
+            scope = CoroutineScope(coroutineContext),
+            seed = seed
+        )
+
+        atom.intent(BoardIntent.Load)
+        drainScheduler()
+        atom.intent(BoardIntent.SelectTask(null))
+        drainScheduler()
+        atom.intent(BoardIntent.TriggerBurst(iterations = 3))
+        drainScheduler(cycles = 20)
+
+        val state = atom.get()
+        assertEquals(3, state.burstRequested)
+        assertEquals(0, state.burstObserved)
+        assertEquals(3, state.burstDropped)
+        assertEquals(0, state.pendingBurstMutations)
+        assertEquals(
+            3,
+            state.diagnostics.effects.count { record ->
+                record.atom == "BoardAtom" && record.value == "mutation_skipped:no_selection"
+            }
+        )
+
+        atom.onStop()
+        atom.onDispose()
+        drainScheduler()
+    }
+
+    @Test
+    fun burstThenFilterAndSaveSelectedMaintainsDeterministicState() = runTest {
+        val seed = listOf(
+            SampleTask(id = "task-1", title = "one", completed = false),
+            SampleTask(id = "task-2", title = "two", completed = false)
+        )
+        val (atom, _, _) = createBoardAtom(
+            scope = CoroutineScope(coroutineContext),
+            seed = seed
+        )
+
+        atom.intent(BoardIntent.Load)
+        drainScheduler()
+        atom.intent(BoardIntent.SelectTask("task-1"))
+        drainScheduler()
+        atom.intent(BoardIntent.TriggerBurst(iterations = 3))
+        drainScheduler(cycles = 20)
+        atom.intent(BoardIntent.UpdateFilter(SampleTaskFilter.COMPLETED))
+        drainScheduler()
+        atom.intent(BoardIntent.SaveSelected)
+        drainScheduler(cycles = 10)
+
+        val state = atom.get()
+        val taskOne = state.tasks.first { task -> task.id == "task-1" }
+        val taskTwo = state.tasks.first { task -> task.id == "task-2" }
+        assertFalse(taskOne.completed)
+        assertFalse(taskTwo.completed)
+        assertTrue(state.visibleTasks.isEmpty())
+        assertEquals(3, state.burstRequested)
+        assertEquals(3, state.burstObserved)
+        assertEquals(0, state.burstDropped)
+        assertEquals(0, state.pendingBurstMutations)
+        assertEquals(
+            4,
+            state.diagnostics.effects.count { record ->
+                record.atom == "BoardAtom" && record.value == "task_saved:task-1"
+            }
+        )
+
+        atom.onStop()
+        atom.onDispose()
+        drainScheduler()
+    }
+
     private fun createBoardAtom(
         scope: CoroutineScope,
         seed: List<SampleTask>
