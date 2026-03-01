@@ -93,4 +93,58 @@ class TaskAtomTest {
         atom.onStop()
         atom.onDispose()
     }
+
+    @Test
+    fun toggleCompletedProducesDeterministicDiagnosticsOrdering() = runTest {
+        val task = SampleTask(id = "task-1", title = "Draft", completed = false)
+        val repository = InMemorySampleTaskRepository(
+            initialData = mapOf(SAMPLE_BOARD_ID to listOf(task))
+        )
+        val diagnostics = InMemorySampleDiagnostics()
+        val atom = TaskAtom(
+            scope = CoroutineScope(coroutineContext),
+            handle = InMemoryStateHandle(
+                TaskAtom.initial(
+                    SampleTaskParams(
+                        task = task,
+                        boardId = SAMPLE_BOARD_ID
+                    )
+                )
+            ),
+            repository = repository,
+            diagnostics = diagnostics
+        )
+
+        atom.onStart()
+        atom.submit(TaskIntent.ToggleCompleted)
+
+        val snapshot = diagnostics.snapshot()
+        assertEquals(
+            listOf(
+                SampleDiagnosticsRecord(atom = "TaskAtom[task-1]", value = "completion_toggled")
+            ),
+            snapshot.events
+        )
+        assertEquals(
+            listOf(
+                SampleDiagnosticsRecord(
+                    atom = "TaskAtom[task-1]",
+                    value = "completion_toggled:task-1"
+                )
+            ),
+            snapshot.effects
+        )
+        assertEquals(
+            listOf(
+                SampleDiagnosticsRecord(
+                    atom = "TaskAtom[task-1]",
+                    value = "completed=true, title=Draft"
+                )
+            ),
+            snapshot.states
+        )
+
+        atom.onStop()
+        atom.onDispose()
+    }
 }
