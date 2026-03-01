@@ -44,6 +44,20 @@ class BoardAtomTest {
             listOf("BoardAtom[main-board]", "TaskAtom[task-1]", "TaskAtom[task-2]"),
             snapshot.activeAtoms
         )
+        assertEquals(
+            listOf(
+                SampleDiagnosticsRecord(atom = "BoardAtom", value = "load_requested"),
+                SampleDiagnosticsRecord(atom = "BoardAtom", value = "tasks_loaded")
+            ),
+            snapshot.events
+        )
+        assertEquals(
+            listOf(
+                SampleDiagnosticsRecord(atom = "BoardAtom", value = "load_requested"),
+                SampleDiagnosticsRecord(atom = "BoardAtom", value = "tasks_loaded:2")
+            ),
+            snapshot.effects
+        )
         assertEquals(snapshot.activeAtoms, state.diagnostics.activeAtoms)
         assertTrue(state.diagnostics.events.isNotEmpty())
         assertTrue(state.diagnostics.effects.isNotEmpty())
@@ -75,6 +89,28 @@ class BoardAtomTest {
         val updated = atom.get().tasks.first { it.id == "task-2" }
         assertTrue(updated.completed)
         assertEquals("two", updated.title)
+
+        val snapshot = atom.get().diagnostics
+        assertEquals(
+            listOf(
+                SampleDiagnosticsRecord(atom = "BoardAtom", value = "load_requested"),
+                SampleDiagnosticsRecord(atom = "BoardAtom", value = "tasks_loaded"),
+                SampleDiagnosticsRecord(atom = "BoardAtom", value = "task_selected"),
+                SampleDiagnosticsRecord(atom = "TaskAtom[task-2]", value = "completion_toggled"),
+                SampleDiagnosticsRecord(atom = "BoardAtom", value = "task_saved")
+            ),
+            snapshot.events
+        )
+        assertEquals(
+            listOf(
+                SampleDiagnosticsRecord(atom = "BoardAtom", value = "load_requested"),
+                SampleDiagnosticsRecord(atom = "BoardAtom", value = "tasks_loaded:2"),
+                SampleDiagnosticsRecord(atom = "BoardAtom", value = "task_selected:task-2"),
+                SampleDiagnosticsRecord(atom = "TaskAtom[task-2]", value = "completion_toggled:task-2"),
+                SampleDiagnosticsRecord(atom = "BoardAtom", value = "task_saved:task-2")
+            ),
+            snapshot.effects
+        )
 
         atom.onStop()
         atom.onDispose()
