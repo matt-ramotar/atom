@@ -22,6 +22,12 @@ kotlin {
             }
             kotlin.srcDir("build/generated/ksp/metadata/commonMain/kotlin")
         }
+
+        jvmMain {
+            dependencies {
+                implementation(compose.desktop.currentOs)
+            }
+        }
     }
 
     targets.configureEach {
@@ -44,4 +50,10 @@ configure<KspExtension> {
 
 dependencies {
     add("kspCommonMainMetadata", project(":ksp"))
+}
+
+compose.desktop {
+    application {
+        mainClass = "dev.mattramotar.atom.sample.SampleLauncherKt"
+    }
 }
