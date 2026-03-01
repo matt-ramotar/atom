@@ -7,6 +7,7 @@ import dev.mattramotar.atom.runtime.state.InMemoryStateHandle
 import dev.mattramotar.atom.runtime.state.InMemoryStateHandleFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.reflect.KClass
@@ -30,8 +31,7 @@ class BoardAtomTest {
         )
 
         atom.intent(BoardIntent.Load)
-        runCurrent()
-        runCurrent()
+        drainScheduler()
 
         val state = atom.get()
         assertFalse(state.isLoading)
@@ -44,10 +44,13 @@ class BoardAtomTest {
             listOf("BoardAtom[main-board]", "TaskAtom[task-1]", "TaskAtom[task-2]"),
             snapshot.activeAtoms
         )
+        assertEquals(snapshot.activeAtoms, state.diagnostics.activeAtoms)
+        assertTrue(state.diagnostics.events.isNotEmpty())
+        assertTrue(state.diagnostics.effects.isNotEmpty())
 
         atom.onStop()
         atom.onDispose()
-        runCurrent()
+        drainScheduler()
     }
 
     @Test
@@ -62,14 +65,12 @@ class BoardAtomTest {
         )
 
         atom.intent(BoardIntent.Load)
-        runCurrent()
-        runCurrent()
+        drainScheduler()
 
         atom.intent(BoardIntent.SelectTask("task-2"))
-        runCurrent()
+        drainScheduler()
         atom.intent(BoardIntent.SaveSelected)
-        runCurrent()
-        runCurrent()
+        drainScheduler()
 
         val updated = atom.get().tasks.first { it.id == "task-2" }
         assertTrue(updated.completed)
@@ -77,7 +78,7 @@ class BoardAtomTest {
 
         atom.onStop()
         atom.onDispose()
-        runCurrent()
+        drainScheduler()
     }
 
     @Test
@@ -93,8 +94,7 @@ class BoardAtomTest {
         )
 
         atom.intent(BoardIntent.Load)
-        runCurrent()
-        runCurrent()
+        drainScheduler()
 
         assertEquals(
             listOf(
@@ -111,8 +111,7 @@ class BoardAtomTest {
             tasks = listOf(SampleTask(id = "task-1", title = "one"))
         )
         atom.intent(BoardIntent.Load)
-        runCurrent()
-        runCurrent()
+        drainScheduler()
 
         assertEquals(
             listOf("BoardAtom[main-board]", "TaskAtom[task-1]"),
@@ -121,7 +120,29 @@ class BoardAtomTest {
 
         atom.onStop()
         atom.onDispose()
-        runCurrent()
+        drainScheduler()
+    }
+
+    @Test
+    fun diagnosticsRefreshIntentUpdatesBoardStateSnapshot() = runTest {
+        val seed = listOf(SampleTask(id = "task-1", title = "one"))
+        val (atom, _, _) = createBoardAtom(
+            scope = CoroutineScope(coroutineContext),
+            seed = seed
+        )
+
+        atom.intent(BoardIntent.Load)
+        drainScheduler()
+        atom.intent(BoardIntent.RefreshDiagnostics)
+        drainScheduler()
+
+        val state = atom.get()
+        assertTrue(state.diagnostics.activeAtoms.contains("BoardAtom[main-board]"))
+        assertTrue(state.diagnostics.states.any { it.atom == "BoardAtom" })
+
+        atom.onStop()
+        atom.onDispose()
+        drainScheduler()
     }
 
     private fun createBoardAtom(
@@ -172,6 +193,12 @@ class BoardAtomTest {
         return object : AtomFactoryRegistry {
             override fun entryFor(type: KClass<out AtomLifecycle>) =
                 if (type == TaskAtom::class) entry else null
+        }
+    }
+
+    private fun TestScope.drainScheduler() {
+        repeat(6) {
+            runCurrent()
         }
     }
 }

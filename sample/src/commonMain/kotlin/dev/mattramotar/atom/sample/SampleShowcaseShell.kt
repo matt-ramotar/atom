@@ -1,18 +1,27 @@
 package dev.mattramotar.atom.sample
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.mattramotar.atom.generated.rememberBoardAtom
@@ -24,7 +33,12 @@ fun SampleShowcaseShell(modifier: Modifier = Modifier) {
         params = SampleBoardParams(boardId = SAMPLE_BOARD_ID)
     )
     val state by atom.state.collectAsState()
-    val selectedTask = state.tasks.firstOrNull { it.id == state.selectedTaskId }
+    val selectedTask = state.tasks.firstOrNull { task -> task.id == state.selectedTaskId }
+    var titleDraft by remember { mutableStateOf("") }
+
+    LaunchedEffect(selectedTask?.id, selectedTask?.title) {
+        titleDraft = selectedTask?.title.orEmpty()
+    }
 
     Column(
         modifier = modifier
@@ -33,100 +47,284 @@ fun SampleShowcaseShell(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = "Atom Showcase Board (Phase 2)",
+            text = "Atom Showcase Board (Phase 3)",
             style = MaterialTheme.typography.headlineSmall
         )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            ShellZone(
-                title = "Task List",
-                body = "Loaded tasks: ${state.tasks.size}\nVisible tasks: ${state.visibleTasks.size}\nSelected: ${state.selectedTaskId ?: "none"}",
-                modifier = Modifier.weight(1f)
-            )
-            ShellZone(
-                title = "Task Detail",
-                body = selectedTask?.let { task ->
-                    "Task ${task.id}\nTitle: ${task.title}\nCompleted: ${task.completed}\nNotes: ${task.notes}"
-                } ?: "No task selected.",
-                modifier = Modifier.weight(1f)
-            )
-            ShellZone(
-                title = "Diagnostics",
-                body = "Loading: ${state.isLoading}\nFilter: ${state.filter}\nSync generation: ${state.syncGeneration}\nLast event: ${state.lastEvent}",
-                modifier = Modifier.weight(1f)
-            )
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedButton(onClick = { atom.intent(BoardIntent.Load) }) {
-                Text("Load")
-            }
-            OutlinedButton(onClick = { atom.intent(BoardIntent.BurstSync) }) {
-                Text("Burst Sync")
-            }
-            OutlinedButton(
-                onClick = { atom.intent(BoardIntent.SaveSelected) }
-            ) {
-                Text("Toggle Selected")
-            }
-            OutlinedButton(
-                onClick = {
-                    val nextTitle = selectedTask?.title?.let { title ->
-                        if (title.endsWith(" (edited)")) {
-                            title.removeSuffix(" (edited)")
-                        } else {
-                            "$title (edited)"
-                        }
-                    } ?: return@OutlinedButton
-                    atom.intent(BoardIntent.EditSelectedTitle(nextTitle))
+        Text(
+            text = "Three-zone showcase: Task List, Task Detail, and Diagnostics.",
+            style = MaterialTheme.typography.bodyMedium
+        )
+
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val compactLayout = maxWidth < 1080.dp
+
+            if (compactLayout) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    TaskListZone(
+                        state = state,
+                        onLoad = { atom.intent(BoardIntent.Load) },
+                        onSelectTask = { taskId -> atom.intent(BoardIntent.SelectTask(taskId)) },
+                        onFilterSelected = { filter -> atom.intent(BoardIntent.UpdateFilter(filter)) },
+                        onToggleSelected = { atom.intent(BoardIntent.SaveSelected) },
+                        onCycleFilter = {
+                            atom.intent(BoardIntent.UpdateFilter(state.filter.next()))
+                        },
+                        onBurstSync = { atom.intent(BoardIntent.BurstSync) }
+                    )
+                    TaskDetailZone(
+                        selectedTask = selectedTask,
+                        titleDraft = titleDraft,
+                        onTitleDraftChanged = { next -> titleDraft = next },
+                        onApplyTitle = {
+                            val nextTitle = titleDraft.trim()
+                            if (nextTitle.isNotEmpty()) {
+                                atom.intent(BoardIntent.EditSelectedTitle(nextTitle))
+                            }
+                        },
+                        onToggleSelected = { atom.intent(BoardIntent.SaveSelected) }
+                    )
+                    DiagnosticsZone(
+                        state = state,
+                        onRefresh = { atom.intent(BoardIntent.RefreshDiagnostics) }
+                    )
                 }
-            ) {
-                Text("Edit Selected")
-            }
-            OutlinedButton(
-                onClick = {
-                    val nextFilter = when (state.filter) {
-                        SampleTaskFilter.ALL -> SampleTaskFilter.ACTIVE
-                        SampleTaskFilter.ACTIVE -> SampleTaskFilter.COMPLETED
-                        SampleTaskFilter.COMPLETED -> SampleTaskFilter.ALL
-                    }
-                    atom.intent(BoardIntent.UpdateFilter(nextFilter))
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    TaskListZone(
+                        state = state,
+                        modifier = Modifier.weight(1f),
+                        onLoad = { atom.intent(BoardIntent.Load) },
+                        onSelectTask = { taskId -> atom.intent(BoardIntent.SelectTask(taskId)) },
+                        onFilterSelected = { filter -> atom.intent(BoardIntent.UpdateFilter(filter)) },
+                        onToggleSelected = { atom.intent(BoardIntent.SaveSelected) },
+                        onCycleFilter = {
+                            atom.intent(BoardIntent.UpdateFilter(state.filter.next()))
+                        },
+                        onBurstSync = { atom.intent(BoardIntent.BurstSync) }
+                    )
+                    TaskDetailZone(
+                        selectedTask = selectedTask,
+                        titleDraft = titleDraft,
+                        modifier = Modifier.weight(1f),
+                        onTitleDraftChanged = { next -> titleDraft = next },
+                        onApplyTitle = {
+                            val nextTitle = titleDraft.trim()
+                            if (nextTitle.isNotEmpty()) {
+                                atom.intent(BoardIntent.EditSelectedTitle(nextTitle))
+                            }
+                        },
+                        onToggleSelected = { atom.intent(BoardIntent.SaveSelected) }
+                    )
+                    DiagnosticsZone(
+                        state = state,
+                        modifier = Modifier.weight(1f),
+                        onRefresh = { atom.intent(BoardIntent.RefreshDiagnostics) }
+                    )
                 }
-            ) {
-                Text("Cycle Filter")
-            }
-            OutlinedButton(
-                onClick = {
-                    val nextTaskId = state.visibleTasks.firstOrNull { it.id != state.selectedTaskId }?.id
-                        ?: state.visibleTasks.firstOrNull()?.id
-                    atom.intent(BoardIntent.SelectTask(nextTaskId))
-                }
-            ) {
-                Text("Select Next")
             }
         }
     }
 }
 
 @Composable
-private fun ShellZone(
-    title: String,
-    body: String,
+private fun TaskListZone(
+    state: BoardState,
+    onLoad: () -> Unit,
+    onSelectTask: (String?) -> Unit,
+    onFilterSelected: (SampleTaskFilter) -> Unit,
+    onToggleSelected: () -> Unit,
+    onCycleFilter: () -> Unit,
+    onBurstSync: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Card(modifier = modifier) {
+    ZoneContainer(title = "Task List", modifier = modifier) {
+        Text(
+            text = "Loaded=${state.tasks.size}, Visible=${state.visibleTasks.size}, Selected=${state.selectedTaskId ?: "none"}",
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onLoad) { Text("Load") }
+            OutlinedButton(onClick = onCycleFilter) { Text("Cycle Filter") }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onToggleSelected, enabled = state.selectedTaskId != null) {
+                Text("Toggle Selected")
+            }
+            OutlinedButton(onClick = onBurstSync) { Text("Burst Sync") }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterOption(
+                selected = state.filter == SampleTaskFilter.ALL,
+                label = "All",
+                onClick = { onFilterSelected(SampleTaskFilter.ALL) }
+            )
+            FilterOption(
+                selected = state.filter == SampleTaskFilter.ACTIVE,
+                label = "Active",
+                onClick = { onFilterSelected(SampleTaskFilter.ACTIVE) }
+            )
+            FilterOption(
+                selected = state.filter == SampleTaskFilter.COMPLETED,
+                label = "Completed",
+                onClick = { onFilterSelected(SampleTaskFilter.COMPLETED) }
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 360.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            if (state.visibleTasks.isEmpty()) {
+                Text("No tasks visible for this filter.", style = MaterialTheme.typography.bodyMedium)
+            }
+            state.visibleTasks.forEach { task ->
+                val selected = task.id == state.selectedTaskId
+                OutlinedButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onSelectTask(task.id) }
+                ) {
+                    val status = if (task.completed) "done" else "open"
+                    val prefix = if (selected) "* " else ""
+                    Text("$prefix${task.id}: ${task.title} [$status]")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskDetailZone(
+    selectedTask: SampleTask?,
+    titleDraft: String,
+    onTitleDraftChanged: (String) -> Unit,
+    onApplyTitle: () -> Unit,
+    onToggleSelected: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    ZoneContainer(title = "Task Detail", modifier = modifier) {
+        if (selectedTask == null) {
+            Text("No task selected.", style = MaterialTheme.typography.bodyMedium)
+            return@ZoneContainer
+        }
+
+        Text("Task: ${selectedTask.id}", style = MaterialTheme.typography.titleSmall)
+        Text("Completed: ${selectedTask.completed}", style = MaterialTheme.typography.bodyMedium)
+        Text("Notes: ${selectedTask.notes}", style = MaterialTheme.typography.bodyMedium)
+
+        OutlinedTextField(
+            modifier = Modifier.fillMaxWidth(),
+            value = titleDraft,
+            onValueChange = onTitleDraftChanged,
+            label = { Text("Title") }
+        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onApplyTitle, enabled = titleDraft.isNotBlank()) {
+                Text("Apply Title")
+            }
+            OutlinedButton(onClick = onToggleSelected) {
+                Text("Toggle Completed")
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticsZone(
+    state: BoardState,
+    onRefresh: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    ZoneContainer(title = "Diagnostics", modifier = modifier) {
+        OutlinedButton(onClick = onRefresh) {
+            Text("Refresh Diagnostics")
+        }
+
+        Text(
+            text = "Board=${state.boardId}, Loading=${state.isLoading}, Filter=${state.filter}, Sync=${state.syncGeneration}, Last=${state.lastEvent}",
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        val snapshot = state.diagnostics
+        Text("Active Atoms", style = MaterialTheme.typography.titleSmall)
+        Text(
+            snapshot.activeAtoms.joinToString(separator = "\n").ifBlank { "(none)" },
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        DiagnosticsRecords(title = "Recent Events", records = snapshot.events)
+        DiagnosticsRecords(title = "Recent Effects", records = snapshot.effects)
+        DiagnosticsRecords(title = "Latest States", records = snapshot.states)
+    }
+}
+
+@Composable
+private fun DiagnosticsRecords(
+    title: String,
+    records: List<SampleDiagnosticsRecord>
+) {
+    Text(title, style = MaterialTheme.typography.titleSmall)
+    val display = records.takeLast(6).asReversed()
+    if (display.isEmpty()) {
+        Text("(empty)", style = MaterialTheme.typography.bodySmall)
+        return
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        display.forEach { record ->
+            Text("${record.atom}: ${record.value}", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun ZoneContainer(
+    title: String,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    Card(modifier = modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(text = title, style = MaterialTheme.typography.titleMedium)
-            Text(text = body, style = MaterialTheme.typography.bodyMedium)
+            content()
         }
+    }
+}
+
+@Composable
+private fun FilterOption(
+    selected: Boolean,
+    label: String,
+    onClick: () -> Unit
+) {
+    OutlinedButton(onClick = onClick) {
+        val prefix = if (selected) "* " else ""
+        Text("$prefix$label")
+    }
+}
+
+private fun SampleTaskFilter.next(): SampleTaskFilter {
+    return when (this) {
+        SampleTaskFilter.ALL -> SampleTaskFilter.ACTIVE
+        SampleTaskFilter.ACTIVE -> SampleTaskFilter.COMPLETED
+        SampleTaskFilter.COMPLETED -> SampleTaskFilter.ALL
     }
 }

@@ -27,7 +27,8 @@ data class BoardState(
     val visibleTasks: List<SampleTask>,
     val selectedTaskId: String?,
     val syncGeneration: Int,
-    val lastEvent: String
+    val lastEvent: String,
+    val diagnostics: SampleDiagnosticsSnapshot
 )
 
 @Serializable
@@ -49,6 +50,9 @@ sealed interface BoardIntent : Intent {
 
     @Serializable
     data object BurstSync : BoardIntent
+
+    @Serializable
+    data object RefreshDiagnostics : BoardIntent
 }
 
 @Serializable
@@ -73,6 +77,12 @@ sealed interface BoardEvent : Event {
 
     @Serializable
     data object BurstRequested : BoardEvent
+
+    @Serializable
+    data object DiagnosticsRefreshRequested : BoardEvent
+
+    @Serializable
+    data class DiagnosticsUpdated(val snapshot: SampleDiagnosticsSnapshot) : BoardEvent
 }
 
 @Serializable
@@ -91,6 +101,9 @@ sealed interface BoardEffect : SideEffect {
 
     @Serializable
     data class LogDiagnostics(val message: String) : BoardEffect
+
+    @Serializable
+    data object RefreshDiagnostics : BoardEffect
 }
 
 @AutoAtom
@@ -113,7 +126,8 @@ class BoardAtom(
                 visibleTasks = emptyList(),
                 selectedTaskId = null,
                 syncGeneration = 0,
-                lastEvent = "idle"
+                lastEvent = "idle",
+                diagnostics = emptySampleDiagnosticsSnapshot()
             )
         }
     }
@@ -149,6 +163,7 @@ class BoardAtom(
             )
 
             BoardIntent.BurstSync -> dispatch(BoardEvent.BurstRequested)
+            BoardIntent.RefreshDiagnostics -> dispatch(BoardEvent.DiagnosticsRefreshRequested)
         }
     }
 
@@ -161,7 +176,8 @@ class BoardAtom(
                 ),
                 effects = listOf(
                     BoardEffect.LogDiagnostics("load_requested"),
-                    BoardEffect.LoadTasks
+                    BoardEffect.LoadTasks,
+                    BoardEffect.RefreshDiagnostics
                 )
             )
 
@@ -180,7 +196,8 @@ class BoardAtom(
                     ),
                     effects = listOf(
                         BoardEffect.SyncChildren(event.tasks),
-                        BoardEffect.LogDiagnostics("tasks_loaded:${event.tasks.size}")
+                        BoardEffect.LogDiagnostics("tasks_loaded:${event.tasks.size}"),
+                        BoardEffect.RefreshDiagnostics
                     )
                 )
             }
@@ -190,7 +207,10 @@ class BoardAtom(
                     selectedTaskId = event.taskId,
                     lastEvent = "task_selected"
                 ),
-                effects = listOf(BoardEffect.LogDiagnostics("task_selected:${event.taskId ?: "none"}"))
+                effects = listOf(
+                    BoardEffect.LogDiagnostics("task_selected:${event.taskId ?: "none"}"),
+                    BoardEffect.RefreshDiagnostics
+                )
             )
 
             is BoardEvent.FilterUpdated -> {
@@ -204,7 +224,10 @@ class BoardAtom(
                             ?: visible.firstOrNull()?.id,
                         lastEvent = "filter_updated"
                     ),
-                    effects = listOf(BoardEffect.LogDiagnostics("filter_updated:${event.filter.name}"))
+                    effects = listOf(
+                        BoardEffect.LogDiagnostics("filter_updated:${event.filter.name}"),
+                        BoardEffect.RefreshDiagnostics
+                    )
                 )
             }
 
@@ -213,7 +236,10 @@ class BoardAtom(
                 if (selectedTaskId == null || state.tasks.none { task -> task.id == selectedTaskId }) {
                     Transition(
                         to = state.copy(lastEvent = "mutation_skipped"),
-                        effects = listOf(BoardEffect.LogDiagnostics("mutation_skipped:no_selection"))
+                        effects = listOf(
+                            BoardEffect.LogDiagnostics("mutation_skipped:no_selection"),
+                            BoardEffect.RefreshDiagnostics
+                        )
                     )
                 } else {
                     Transition(
@@ -237,7 +263,10 @@ class BoardAtom(
                         visibleTasks = visible,
                         lastEvent = "task_saved"
                     ),
-                    effects = listOf(BoardEffect.LogDiagnostics("task_saved:${event.task.id}"))
+                    effects = listOf(
+                        BoardEffect.LogDiagnostics("task_saved:${event.task.id}"),
+                        BoardEffect.RefreshDiagnostics
+                    )
                 )
             }
 
@@ -248,8 +277,18 @@ class BoardAtom(
                 ),
                 effects = listOf(
                     BoardEffect.SyncChildren(state.tasks),
-                    BoardEffect.LogDiagnostics("burst_sync:${state.syncGeneration + 1}")
+                    BoardEffect.LogDiagnostics("burst_sync:${state.syncGeneration + 1}"),
+                    BoardEffect.RefreshDiagnostics
                 )
+            )
+
+            BoardEvent.DiagnosticsRefreshRequested -> Transition(
+                to = state,
+                effects = listOf(BoardEffect.RefreshDiagnostics)
+            )
+
+            is BoardEvent.DiagnosticsUpdated -> Transition(
+                to = state.copy(diagnostics = event.snapshot)
             )
         }
     }
@@ -316,6 +355,11 @@ class BoardAtom(
                     atom = "BoardAtom",
                     value = "tasks=${get().tasks.size}, visible=${get().visibleTasks.size}, selected=${get().selectedTaskId ?: "none"}"
                 )
+            }
+
+            BoardEffect.RefreshDiagnostics -> {
+                val snapshot = diagnostics.snapshot()
+                dispatch(BoardEvent.DiagnosticsUpdated(snapshot))
             }
         }
     }

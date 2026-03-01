@@ -18,6 +18,13 @@ data class SampleDiagnosticsSnapshot(
     val states: List<SampleDiagnosticsRecord>
 )
 
+fun emptySampleDiagnosticsSnapshot(): SampleDiagnosticsSnapshot = SampleDiagnosticsSnapshot(
+    activeAtoms = emptyList(),
+    events = emptyList(),
+    effects = emptyList(),
+    states = emptyList()
+)
+
 interface SampleDiagnostics {
     suspend fun setActiveAtoms(atoms: Set<String>)
 
