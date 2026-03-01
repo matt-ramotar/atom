@@ -71,7 +71,21 @@ fun SampleShowcaseShell(modifier: Modifier = Modifier) {
             OutlinedButton(
                 onClick = { atom.intent(BoardIntent.SaveSelected) }
             ) {
-                Text("Save Selected")
+                Text("Toggle Selected")
+            }
+            OutlinedButton(
+                onClick = {
+                    val nextTitle = selectedTask?.title?.let { title ->
+                        if (title.endsWith(" (edited)")) {
+                            title.removeSuffix(" (edited)")
+                        } else {
+                            "$title (edited)"
+                        }
+                    } ?: return@OutlinedButton
+                    atom.intent(BoardIntent.EditSelectedTitle(nextTitle))
+                }
+            ) {
+                Text("Edit Selected")
             }
             OutlinedButton(
                 onClick = {
