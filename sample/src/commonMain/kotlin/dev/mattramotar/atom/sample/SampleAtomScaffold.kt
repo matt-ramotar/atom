@@ -21,7 +21,7 @@ private object SampleAtomContainer : AtomContainer {
         @Suppress("UNCHECKED_CAST")
         return bindings[type to qualifier] as? T
             ?: error(
-                "No sample binding is configured for ${type.qualifiedName} " +
+                "No sample binding is configured for the requested type " +
                     "(qualifier=$qualifier)."
             )
     }
