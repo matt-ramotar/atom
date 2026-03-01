@@ -5,32 +5,52 @@ import androidx.compose.runtime.remember
 import dev.mattramotar.atom.generated.GeneratedAtomRegistry
 import dev.mattramotar.atom.runtime.compose.AtomCompositionLocals
 import dev.mattramotar.atom.runtime.di.AtomContainer
+import dev.mattramotar.atom.runtime.factory.AtomFactoryRegistry
+import dev.mattramotar.atom.runtime.state.InMemoryStateHandleFactory
+import dev.mattramotar.atom.runtime.state.StateHandleFactory
 import kotlin.reflect.KClass
 
-private object SampleAtomContainer : AtomContainer {
+private class SampleAtomContainer(
+    private val stateHandles: StateHandleFactory,
+) : AtomContainer {
     private val repository = InMemorySampleTaskRepository()
     private val diagnostics = InMemorySampleDiagnostics()
-    private val bindings: Map<Pair<KClass<*>, String?>, Any> = mapOf(
-        (SampleTaskRepository::class to null) to repository,
-        (InMemorySampleTaskRepository::class to null) to repository,
-        (SampleDiagnostics::class to null) to diagnostics,
-        (InMemorySampleDiagnostics::class to null) to diagnostics
-    )
+    var registry: AtomFactoryRegistry? = null
 
     override fun <T : Any> resolve(type: KClass<T>, qualifier: String?): T {
         @Suppress("UNCHECKED_CAST")
-        return bindings[type to qualifier] as? T
-            ?: error(
+        return when {
+            type == SampleTaskRepository::class || type == InMemorySampleTaskRepository::class ->
+                repository as T
+
+            type == SampleDiagnostics::class || type == InMemorySampleDiagnostics::class ->
+                diagnostics as T
+
+            type == StateHandleFactory::class -> stateHandles as T
+            type == AtomFactoryRegistry::class -> {
+                val value = registry
+                    ?: error("Sample AtomFactoryRegistry is not initialized yet.")
+                value as T
+            }
+
+            else -> error(
                 "No sample binding is configured for the requested type " +
                     "(qualifier=$qualifier)."
             )
+        }
     }
 }
 
 @Composable
 fun SampleShowcaseApp() {
-    val registry = remember { GeneratedAtomRegistry(SampleAtomContainer) }
-    AtomCompositionLocals(factories = registry) {
+    val stateHandles = remember { InMemoryStateHandleFactory }
+    val container = remember { SampleAtomContainer(stateHandles = stateHandles) }
+    val registry = remember { GeneratedAtomRegistry(container) }
+    container.registry = registry
+    AtomCompositionLocals(
+        factories = registry,
+        stateHandles = stateHandles
+    ) {
         SampleShowcaseShell()
     }
 }
