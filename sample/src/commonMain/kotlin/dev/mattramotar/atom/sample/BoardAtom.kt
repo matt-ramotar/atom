@@ -28,7 +28,11 @@ data class BoardState(
     val selectedTaskId: String?,
     val syncGeneration: Int,
     val lastEvent: String,
-    val diagnostics: SampleDiagnosticsSnapshot
+    val diagnostics: SampleDiagnosticsSnapshot,
+    val burstRequested: Int,
+    val burstObserved: Int,
+    val burstDropped: Int,
+    val pendingBurstMutations: Int
 )
 
 @Serializable
@@ -50,6 +54,12 @@ sealed interface BoardIntent : Intent {
 
     @Serializable
     data object BurstSync : BoardIntent
+
+    @Serializable
+    data class TriggerBurst(val iterations: Int) : BoardIntent
+
+    @Serializable
+    data class IdentityProbe(val value: String) : BoardIntent
 
     @Serializable
     data object RefreshDiagnostics : BoardIntent
@@ -76,7 +86,13 @@ sealed interface BoardEvent : Event {
     data class TaskSaved(val task: SampleTask) : BoardEvent
 
     @Serializable
-    data object BurstRequested : BoardEvent
+    data class BurstRequested(val iterations: Int) : BoardEvent
+
+    @Serializable
+    data class BurstProgressed(val completed: Int, val total: Int) : BoardEvent
+
+    @Serializable
+    data class IdentityProbeRecorded(val value: String) : BoardEvent
 
     @Serializable
     data object DiagnosticsRefreshRequested : BoardEvent
@@ -103,6 +119,9 @@ sealed interface BoardEffect : SideEffect {
     data class LogDiagnostics(val message: String) : BoardEffect
 
     @Serializable
+    data class PerformBurst(val iterations: Int) : BoardEffect
+
+    @Serializable
     data object RefreshDiagnostics : BoardEffect
 }
 
@@ -116,6 +135,8 @@ class BoardAtom(
     registry: AtomFactoryRegistry
 ) : Atom<BoardState, BoardIntent, BoardEvent, BoardEffect>(scope, handle) {
     companion object {
+        private const val DEFAULT_BURST_ITERATIONS = 5
+
         @InitialState
         fun initial(params: SampleBoardParams): BoardState {
             return BoardState(
@@ -127,7 +148,11 @@ class BoardAtom(
                 selectedTaskId = null,
                 syncGeneration = 0,
                 lastEvent = "idle",
-                diagnostics = emptySampleDiagnosticsSnapshot()
+                diagnostics = emptySampleDiagnosticsSnapshot(),
+                burstRequested = 0,
+                burstObserved = 0,
+                burstDropped = 0,
+                pendingBurstMutations = 0
             )
         }
     }
@@ -162,7 +187,15 @@ class BoardAtom(
                 BoardEvent.TaskMutationRequested(TaskIntent.EditTitle(intent.title))
             )
 
-            BoardIntent.BurstSync -> dispatch(BoardEvent.BurstRequested)
+            BoardIntent.BurstSync -> dispatch(
+                BoardEvent.BurstRequested(DEFAULT_BURST_ITERATIONS)
+            )
+            is BoardIntent.TriggerBurst -> dispatch(
+                BoardEvent.BurstRequested(intent.iterations.coerceAtLeast(1))
+            )
+            is BoardIntent.IdentityProbe -> dispatch(
+                BoardEvent.IdentityProbeRecorded(intent.value)
+            )
             BoardIntent.RefreshDiagnostics -> dispatch(BoardEvent.DiagnosticsRefreshRequested)
         }
     }
@@ -234,8 +267,13 @@ class BoardAtom(
             is BoardEvent.TaskMutationRequested -> {
                 val selectedTaskId = state.selectedTaskId
                 if (selectedTaskId == null || state.tasks.none { task -> task.id == selectedTaskId }) {
+                    val dropped = if (state.pendingBurstMutations > 0) 1 else 0
                     Transition(
-                        to = state.copy(lastEvent = "mutation_skipped"),
+                        to = state.copy(
+                            lastEvent = if (dropped > 0) "burst_mutation_skipped" else "mutation_skipped",
+                            burstDropped = state.burstDropped + dropped,
+                            pendingBurstMutations = (state.pendingBurstMutations - dropped).coerceAtLeast(0)
+                        ),
                         effects = listOf(
                             BoardEffect.LogDiagnostics("mutation_skipped:no_selection"),
                             BoardEffect.RefreshDiagnostics
@@ -257,11 +295,18 @@ class BoardAtom(
             is BoardEvent.TaskSaved -> {
                 val updatedTasks = state.tasks.updateTask(event.task)
                 val visible = updatedTasks.filterFor(state.filter)
+                val fromBurst = state.pendingBurstMutations > 0
                 Transition(
                     to = state.copy(
                         tasks = updatedTasks,
                         visibleTasks = visible,
-                        lastEvent = "task_saved"
+                        lastEvent = if (fromBurst) "burst_task_saved" else "task_saved",
+                        burstObserved = state.burstObserved + if (fromBurst) 1 else 0,
+                        pendingBurstMutations = if (fromBurst) {
+                            state.pendingBurstMutations - 1
+                        } else {
+                            state.pendingBurstMutations
+                        }
                     ),
                     effects = listOf(
                         BoardEffect.LogDiagnostics("task_saved:${event.task.id}"),
@@ -270,14 +315,34 @@ class BoardAtom(
                 )
             }
 
-            BoardEvent.BurstRequested -> Transition(
+            is BoardEvent.BurstRequested -> {
+                val iterations = event.iterations.coerceAtLeast(1)
+                Transition(
+                    to = state.copy(
+                        syncGeneration = state.syncGeneration + 1,
+                        lastEvent = "burst_requested",
+                        burstRequested = state.burstRequested + iterations,
+                        pendingBurstMutations = state.pendingBurstMutations + iterations
+                    ),
+                    effects = listOf(
+                        BoardEffect.SyncChildren(state.tasks),
+                        BoardEffect.PerformBurst(iterations),
+                        BoardEffect.LogDiagnostics("burst_requested:$iterations"),
+                        BoardEffect.RefreshDiagnostics
+                    )
+                )
+            }
+
+            is BoardEvent.BurstProgressed -> Transition(
                 to = state.copy(
-                    syncGeneration = state.syncGeneration + 1,
-                    lastEvent = "burst_requested"
-                ),
+                    lastEvent = "burst_progress:${event.completed}/${event.total}"
+                )
+            )
+
+            is BoardEvent.IdentityProbeRecorded -> Transition(
+                to = state.copy(lastEvent = "identity_probe"),
                 effects = listOf(
-                    BoardEffect.SyncChildren(state.tasks),
-                    BoardEffect.LogDiagnostics("burst_sync:${state.syncGeneration + 1}"),
+                    BoardEffect.LogDiagnostics("identity_probe:${event.value}"),
                     BoardEffect.RefreshDiagnostics
                 )
             )
@@ -353,8 +418,21 @@ class BoardAtom(
                 diagnostics.recordEffect(atom = "BoardAtom", value = effect.message)
                 diagnostics.recordState(
                     atom = "BoardAtom",
-                    value = "tasks=${get().tasks.size}, visible=${get().visibleTasks.size}, selected=${get().selectedTaskId ?: "none"}"
+                    value = "tasks=${get().tasks.size}, visible=${get().visibleTasks.size}, selected=${get().selectedTaskId ?: "none"}, burst=${get().burstObserved}/${get().burstRequested}, pending=${get().pendingBurstMutations}"
                 )
+            }
+
+            is BoardEffect.PerformBurst -> {
+                val iterations = effect.iterations.coerceAtLeast(1)
+                repeat(iterations) { index ->
+                    dispatch(BoardEvent.TaskMutationRequested(TaskIntent.ToggleCompleted))
+                    dispatch(
+                        BoardEvent.BurstProgressed(
+                            completed = index + 1,
+                            total = iterations
+                        )
+                    )
+                }
             }
 
             BoardEffect.RefreshDiagnostics -> {

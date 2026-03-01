@@ -145,6 +145,35 @@ class BoardAtomTest {
         drainScheduler()
     }
 
+    @Test
+    fun triggerBurstTracksRequestedObservedAndPendingCounts() = runTest {
+        val seed = listOf(
+            SampleTask(id = "task-1", title = "one", completed = false),
+            SampleTask(id = "task-2", title = "two", completed = false)
+        )
+        val (atom, _, _) = createBoardAtom(
+            scope = CoroutineScope(coroutineContext),
+            seed = seed
+        )
+
+        atom.intent(BoardIntent.Load)
+        drainScheduler()
+        atom.intent(BoardIntent.SelectTask("task-1"))
+        drainScheduler()
+        atom.intent(BoardIntent.TriggerBurst(iterations = 4))
+        drainScheduler(cycles = 16)
+
+        val state = atom.get()
+        assertEquals(4, state.burstRequested)
+        assertEquals(4, state.burstObserved)
+        assertEquals(0, state.burstDropped)
+        assertEquals(0, state.pendingBurstMutations)
+
+        atom.onStop()
+        atom.onDispose()
+        drainScheduler()
+    }
+
     private fun createBoardAtom(
         scope: CoroutineScope,
         seed: List<SampleTask>
@@ -196,8 +225,8 @@ class BoardAtomTest {
         }
     }
 
-    private fun TestScope.drainScheduler() {
-        repeat(6) {
+    private fun TestScope.drainScheduler(cycles: Int = 6) {
+        repeat(cycles) {
             runCurrent()
         }
     }

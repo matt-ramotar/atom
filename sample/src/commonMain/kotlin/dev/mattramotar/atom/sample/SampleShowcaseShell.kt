@@ -28,13 +28,37 @@ import dev.mattramotar.atom.generated.rememberBoardAtom
 
 @Composable
 fun SampleShowcaseShell(modifier: Modifier = Modifier) {
+    var keyDraft by remember { mutableStateOf("showcase-board") }
+    var boardIdDraft by remember { mutableStateOf(SAMPLE_BOARD_ID) }
+    var appliedKey by remember { mutableStateOf("showcase-board") }
+    var appliedBoardId by remember { mutableStateOf(SAMPLE_BOARD_ID) }
+    var burstIterationsDraft by remember { mutableStateOf("6") }
+    var pendingIdentityProbe by remember { mutableStateOf<String?>(null) }
+
     val atom = rememberBoardAtom(
-        key = "showcase-board",
-        params = SampleBoardParams(boardId = SAMPLE_BOARD_ID)
+        key = appliedKey,
+        params = SampleBoardParams(boardId = appliedBoardId)
     )
     val state by atom.state.collectAsState()
     val selectedTask = state.tasks.firstOrNull { task -> task.id == state.selectedTaskId }
     var titleDraft by remember { mutableStateOf("") }
+
+    val atomInstanceToken = remember(atom) { "h${atom.hashCode().toString(16)}" }
+    var recreationCount by remember { mutableStateOf(0) }
+    var lastObservedToken by remember { mutableStateOf(atomInstanceToken) }
+
+    LaunchedEffect(atomInstanceToken) {
+        if (lastObservedToken != atomInstanceToken) {
+            recreationCount += 1
+            lastObservedToken = atomInstanceToken
+        }
+    }
+
+    LaunchedEffect(atomInstanceToken, pendingIdentityProbe) {
+        val probe = pendingIdentityProbe ?: return@LaunchedEffect
+        atom.intent(BoardIntent.IdentityProbe(probe))
+        pendingIdentityProbe = null
+    }
 
     LaunchedEffect(selectedTask?.id, selectedTask?.title) {
         titleDraft = selectedTask?.title.orEmpty()
@@ -51,8 +75,39 @@ fun SampleShowcaseShell(modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.headlineSmall
         )
         Text(
-            text = "Three-zone showcase: Task List, Task Detail, and Diagnostics.",
+            text = "Three-zone showcase with identity and burst interaction lab controls.",
             style = MaterialTheme.typography.bodyMedium
+        )
+
+        IdentityLabZone(
+            appliedKey = appliedKey,
+            appliedBoardId = appliedBoardId,
+            keyDraft = keyDraft,
+            boardIdDraft = boardIdDraft,
+            burstIterationsDraft = burstIterationsDraft,
+            atomInstanceToken = atomInstanceToken,
+            recreationCount = recreationCount,
+            burstRequested = state.burstRequested,
+            burstObserved = state.burstObserved,
+            burstDropped = state.burstDropped,
+            pendingBurstMutations = state.pendingBurstMutations,
+            onKeyDraftChanged = { keyDraft = it },
+            onBoardIdDraftChanged = { boardIdDraft = it },
+            onBurstIterationsDraftChanged = { burstIterationsDraft = it },
+            onApplyKey = {
+                val normalized = keyDraft.ifBlank { "showcase-board" }
+                appliedKey = normalized
+                pendingIdentityProbe = "key=$normalized"
+            },
+            onApplyBoardId = {
+                val normalized = boardIdDraft.ifBlank { SAMPLE_BOARD_ID }
+                appliedBoardId = normalized
+                pendingIdentityProbe = "boardId=$normalized"
+            },
+            onTriggerBurst = {
+                val iterations = burstIterationsDraft.toIntOrNull()?.coerceAtLeast(1) ?: 1
+                atom.intent(BoardIntent.TriggerBurst(iterations))
+            }
         )
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
@@ -74,7 +129,7 @@ fun SampleShowcaseShell(modifier: Modifier = Modifier) {
                         onCycleFilter = {
                             atom.intent(BoardIntent.UpdateFilter(state.filter.next()))
                         },
-                        onBurstSync = { atom.intent(BoardIntent.BurstSync) }
+                        onBurstSync = { atom.intent(BoardIntent.TriggerBurst(3)) }
                     )
                     TaskDetailZone(
                         selectedTask = selectedTask,
@@ -108,7 +163,7 @@ fun SampleShowcaseShell(modifier: Modifier = Modifier) {
                         onCycleFilter = {
                             atom.intent(BoardIntent.UpdateFilter(state.filter.next()))
                         },
-                        onBurstSync = { atom.intent(BoardIntent.BurstSync) }
+                        onBurstSync = { atom.intent(BoardIntent.TriggerBurst(3)) }
                     )
                     TaskDetailZone(
                         selectedTask = selectedTask,
@@ -129,6 +184,78 @@ fun SampleShowcaseShell(modifier: Modifier = Modifier) {
                         onRefresh = { atom.intent(BoardIntent.RefreshDiagnostics) }
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IdentityLabZone(
+    appliedKey: String,
+    appliedBoardId: String,
+    keyDraft: String,
+    boardIdDraft: String,
+    burstIterationsDraft: String,
+    atomInstanceToken: String,
+    recreationCount: Int,
+    burstRequested: Int,
+    burstObserved: Int,
+    burstDropped: Int,
+    pendingBurstMutations: Int,
+    onKeyDraftChanged: (String) -> Unit,
+    onBoardIdDraftChanged: (String) -> Unit,
+    onBurstIterationsDraftChanged: (String) -> Unit,
+    onApplyKey: () -> Unit,
+    onApplyBoardId: () -> Unit,
+    onTriggerBurst: () -> Unit
+) {
+    ZoneContainer(title = "Identity and Burst Lab") {
+        Text(
+            text = "Applied key=$appliedKey, params.boardId=$appliedBoardId",
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            text = "Instance token=$atomInstanceToken, recreations=$recreationCount",
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            text = "Burst requested=$burstRequested, observed=$burstObserved, dropped=$burstDropped, pending=$pendingBurstMutations",
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                modifier = Modifier.weight(1f),
+                value = keyDraft,
+                onValueChange = onKeyDraftChanged,
+                label = { Text("Atom key") }
+            )
+            OutlinedButton(onClick = onApplyKey) {
+                Text("Apply Key")
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                modifier = Modifier.weight(1f),
+                value = boardIdDraft,
+                onValueChange = onBoardIdDraftChanged,
+                label = { Text("Board param") }
+            )
+            OutlinedButton(onClick = onApplyBoardId) {
+                Text("Apply Params")
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                modifier = Modifier.weight(1f),
+                value = burstIterationsDraft,
+                onValueChange = onBurstIterationsDraftChanged,
+                label = { Text("Burst iterations") }
+            )
+            OutlinedButton(onClick = onTriggerBurst) {
+                Text("Trigger Burst")
             }
         }
     }
@@ -160,7 +287,7 @@ private fun TaskListZone(
             OutlinedButton(onClick = onToggleSelected, enabled = state.selectedTaskId != null) {
                 Text("Toggle Selected")
             }
-            OutlinedButton(onClick = onBurstSync) { Text("Burst Sync") }
+            OutlinedButton(onClick = onBurstSync) { Text("Quick Burst") }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
