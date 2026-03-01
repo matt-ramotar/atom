@@ -41,7 +41,7 @@ class BoardAtomTest {
 
         val snapshot = diagnostics.snapshot()
         assertEquals(
-            listOf("BoardAtom[main-board]", "BoardTaskChildAtom[task-1]", "BoardTaskChildAtom[task-2]"),
+            listOf("BoardAtom[main-board]", "TaskAtom[task-1]", "TaskAtom[task-2]"),
             snapshot.activeAtoms
         )
 
@@ -73,7 +73,7 @@ class BoardAtomTest {
 
         val updated = atom.get().tasks.first { it.id == "task-2" }
         assertTrue(updated.completed)
-        assertEquals("Saved by BoardAtom", updated.notes)
+        assertEquals("two", updated.title)
 
         atom.onStop()
         atom.onDispose()
@@ -99,9 +99,9 @@ class BoardAtomTest {
         assertEquals(
             listOf(
                 "BoardAtom[main-board]",
-                "BoardTaskChildAtom[task-1]",
-                "BoardTaskChildAtom[task-2]",
-                "BoardTaskChildAtom[task-3]"
+                "TaskAtom[task-1]",
+                "TaskAtom[task-2]",
+                "TaskAtom[task-3]"
             ),
             diagnostics.snapshot().activeAtoms
         )
@@ -115,7 +115,7 @@ class BoardAtomTest {
         runCurrent()
 
         assertEquals(
-            listOf("BoardAtom[main-board]", "BoardTaskChildAtom[task-1]"),
+            listOf("BoardAtom[main-board]", "TaskAtom[task-1]"),
             diagnostics.snapshot().activeAtoms
         )
 
@@ -138,25 +138,40 @@ class BoardAtomTest {
             repository = repository,
             diagnostics = diagnostics,
             stateHandleFactory = InMemoryStateHandleFactory,
-            registry = childRegistry()
+            registry = childRegistry(
+                repository = repository,
+                diagnostics = diagnostics
+            )
         )
         atom.onStart()
         return Triple(atom, repository, diagnostics)
     }
 
-    private fun childRegistry(): AtomFactoryRegistry {
-        val entry = Atoms.factory<BoardTaskChildAtom, BoardTaskChildState, BoardTaskChildParams>(
+    private fun childRegistry(
+        repository: SampleTaskRepository,
+        diagnostics: SampleDiagnostics
+    ): AtomFactoryRegistry {
+        val entry = Atoms.factory<TaskAtom, TaskState, SampleTaskParams>(
             create = { scope, handle, _ ->
-                BoardTaskChildAtom(scope, handle)
+                TaskAtom(
+                    scope = scope,
+                    handle = handle,
+                    repository = repository,
+                    diagnostics = diagnostics
+                )
             },
             initial = { params ->
-                BoardTaskChildState(taskId = params.taskId)
+                TaskState(
+                    boardId = params.boardId,
+                    task = params.task,
+                    revision = params.revision
+                )
             }
         )
 
         return object : AtomFactoryRegistry {
             override fun entryFor(type: KClass<out AtomLifecycle>) =
-                if (type == BoardTaskChildAtom::class) entry else null
+                if (type == TaskAtom::class) entry else null
         }
     }
 }
