@@ -26,10 +26,13 @@ data class SampleBoardParams(
 
 @Serializable
 data class SampleTaskParams(
-    val taskId: String,
+    val task: SampleTask,
     val boardId: String = SAMPLE_BOARD_ID,
     val revision: Int = 0
-)
+) {
+    val taskId: String
+        get() = task.id
+}
 
 fun SampleTask.matches(filter: SampleTaskFilter): Boolean = when (filter) {
     SampleTaskFilter.ALL -> true

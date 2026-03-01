@@ -45,6 +45,9 @@ sealed interface BoardIntent : Intent {
     data object SaveSelected : BoardIntent
 
     @Serializable
+    data class EditSelectedTitle(val title: String) : BoardIntent
+
+    @Serializable
     data object BurstSync : BoardIntent
 }
 
@@ -63,7 +66,7 @@ sealed interface BoardEvent : Event {
     data class FilterUpdated(val filter: SampleTaskFilter) : BoardEvent
 
     @Serializable
-    data object SaveRequested : BoardEvent
+    data class TaskMutationRequested(val mutation: TaskIntent) : BoardEvent
 
     @Serializable
     data class TaskSaved(val task: SampleTask) : BoardEvent
@@ -78,10 +81,13 @@ sealed interface BoardEffect : SideEffect {
     data object LoadTasks : BoardEffect
 
     @Serializable
-    data class SaveTask(val task: SampleTask) : BoardEffect
+    data class MutateTask(
+        val taskId: String,
+        val mutation: TaskIntent
+    ) : BoardEffect
 
     @Serializable
-    data class SyncChildren(val taskIds: List<String>) : BoardEffect
+    data class SyncChildren(val tasks: List<SampleTask>) : BoardEffect
 
     @Serializable
     data class LogDiagnostics(val message: String) : BoardEffect
@@ -134,7 +140,14 @@ class BoardAtom(
             BoardIntent.Load -> dispatch(BoardEvent.LoadRequested)
             is BoardIntent.SelectTask -> dispatch(BoardEvent.TaskSelected(intent.taskId))
             is BoardIntent.UpdateFilter -> dispatch(BoardEvent.FilterUpdated(intent.filter))
-            BoardIntent.SaveSelected -> dispatch(BoardEvent.SaveRequested)
+            BoardIntent.SaveSelected -> dispatch(
+                BoardEvent.TaskMutationRequested(TaskIntent.ToggleCompleted)
+            )
+
+            is BoardIntent.EditSelectedTitle -> dispatch(
+                BoardEvent.TaskMutationRequested(TaskIntent.EditTitle(intent.title))
+            )
+
             BoardIntent.BurstSync -> dispatch(BoardEvent.BurstRequested)
         }
     }
@@ -166,7 +179,7 @@ class BoardAtom(
                         lastEvent = "tasks_loaded"
                     ),
                     effects = listOf(
-                        BoardEffect.SyncChildren(event.tasks.map { it.id }),
+                        BoardEffect.SyncChildren(event.tasks),
                         BoardEffect.LogDiagnostics("tasks_loaded:${event.tasks.size}")
                     )
                 )
@@ -195,17 +208,22 @@ class BoardAtom(
                 )
             }
 
-            BoardEvent.SaveRequested -> {
-                val selected = state.tasks.firstOrNull { it.id == state.selectedTaskId }
-                if (selected == null) {
+            is BoardEvent.TaskMutationRequested -> {
+                val selectedTaskId = state.selectedTaskId
+                if (selectedTaskId == null || state.tasks.none { task -> task.id == selectedTaskId }) {
                     Transition(
-                        to = state.copy(lastEvent = "save_skipped"),
-                        effects = listOf(BoardEffect.LogDiagnostics("save_skipped:no_selection"))
+                        to = state.copy(lastEvent = "mutation_skipped"),
+                        effects = listOf(BoardEffect.LogDiagnostics("mutation_skipped:no_selection"))
                     )
                 } else {
                     Transition(
-                        to = state.copy(lastEvent = "save_requested"),
-                        effects = listOf(BoardEffect.SaveTask(selected))
+                        to = state.copy(lastEvent = "task_mutation_requested"),
+                        effects = listOf(
+                            BoardEffect.MutateTask(
+                                taskId = selectedTaskId,
+                                mutation = event.mutation
+                            )
+                        )
                     )
                 }
             }
@@ -229,7 +247,7 @@ class BoardAtom(
                     lastEvent = "burst_requested"
                 ),
                 effects = listOf(
-                    BoardEffect.SyncChildren(state.tasks.map { it.id }),
+                    BoardEffect.SyncChildren(state.tasks),
                     BoardEffect.LogDiagnostics("burst_sync:${state.syncGeneration + 1}")
                 )
             )
@@ -257,23 +275,36 @@ class BoardAtom(
                 dispatch(BoardEvent.TasksLoaded(loaded))
             }
 
-            is BoardEffect.SaveTask -> {
-                val task = effect.task.copy(
-                    notes = "Saved by BoardAtom",
-                    completed = !effect.task.completed
+            is BoardEffect.MutateTask -> {
+                val snapshot = get()
+                val selected = snapshot.tasks.firstOrNull { task -> task.id == effect.taskId }
+                    ?: return
+                val taskAtom = childProvider.getOrCreate(
+                    type = TaskAtom::class,
+                    id = effect.taskId,
+                    params = SampleTaskParams(
+                        task = selected,
+                        boardId = snapshot.boardId,
+                        revision = snapshot.syncGeneration
+                    )
                 )
-                repository.save(get().boardId, task)
-                dispatch(BoardEvent.TaskSaved(task))
+                val updated = taskAtom.submit(effect.mutation)
+                dispatch(BoardEvent.TaskSaved(updated))
             }
 
             is BoardEffect.SyncChildren -> {
-                val childParams: Map<Any, BoardTaskChildParams> = effect.taskIds.associate { id ->
-                    id as Any to BoardTaskChildParams(taskId = id)
+                val boardState = get()
+                val childParams: Map<Any, SampleTaskParams> = effect.tasks.associate { task ->
+                    task.id as Any to SampleTaskParams(
+                        task = task,
+                        boardId = boardState.boardId,
+                        revision = boardState.syncGeneration
+                    )
                 }
-                childProvider.sync(BoardTaskChildAtom::class, childParams)
+                childProvider.sync(TaskAtom::class, childParams)
                 diagnostics.setActiveAtoms(
-                    setOf("BoardAtom[${get().boardId}]") + effect.taskIds.map { id ->
-                        "BoardTaskChildAtom[$id]"
+                    setOf("BoardAtom[${boardState.boardId}]") + effect.tasks.map { task ->
+                        "TaskAtom[${task.id}]"
                     }
                 )
             }
