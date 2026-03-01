@@ -4,7 +4,7 @@ plugins {
     id("plugin.atom.kotlin.android.library")
     id("plugin.atom.kotlin.multiplatform")
     alias(libs.plugins.ksp)
-    alias(libs.plugins.metro)
+    alias(libs.plugins.compose)
     alias(libs.plugins.kotlinx.serialization)
     alias(libs.plugins.compose.compiler)
 }
@@ -14,7 +14,9 @@ kotlin {
         commonMain {
             dependencies {
                 implementation(projects.runtime)
-                implementation(projects.metro)
+                implementation(compose.runtime)
+                implementation(compose.foundation)
+                implementation(compose.material3)
                 api(libs.kotlinx.serialization.core)
                 api(libs.kotlinx.serialization.json)
             }
@@ -36,9 +38,8 @@ android {
 }
 
 configure<KspExtension> {
-    arg("atom.di", "metro")
+    arg("atom.di", "manual")
     arg("atom.compose.extensions", "true")
-    arg("atom.metro.origin", "true")
 }
 
 dependencies {
