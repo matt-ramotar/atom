@@ -9,10 +9,11 @@ import androidx.compose.runtime.Recomposer
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
-import dev.mattramotar.atom.generated.GeneratedAtomRegistry
+import dev.mattramotar.atom.runtime.AtomLifecycle
 import dev.mattramotar.atom.runtime.compose.AtomCompositionLocals
 import dev.mattramotar.atom.runtime.compose.atom
-import dev.mattramotar.atom.runtime.di.AtomContainer
+import dev.mattramotar.atom.runtime.factory.AtomFactoryRegistry
+import dev.mattramotar.atom.runtime.factory.Atoms
 import dev.mattramotar.atom.runtime.store.AtomStore
 import dev.mattramotar.atom.runtime.store.AtomStoreOwner
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -38,12 +39,7 @@ class TaskAtomComposeIdentityTest {
             )
         )
         val diagnostics = InMemorySampleDiagnostics()
-        val registry = GeneratedAtomRegistry(
-            TestContainer(
-                repository = repository,
-                diagnostics = diagnostics
-            )
-        )
+        val registry = testRegistry(repository = repository, diagnostics = diagnostics)
         val owner = testOwner()
         val observedAtom = mutableStateOf<TaskAtom?>(null)
         val paramsState = mutableStateOf(
@@ -120,21 +116,26 @@ class TaskAtomComposeIdentityTest {
         override val atomStore = AtomStore()
     }
 
-    private class TestContainer(
-        private val repository: SampleTaskRepository,
-        private val diagnostics: SampleDiagnostics
-    ) : AtomContainer {
-        override fun <T : Any> resolve(type: KClass<T>, qualifier: String?): T {
-            @Suppress("UNCHECKED_CAST")
-            return when {
-                type == SampleTaskRepository::class || type == InMemorySampleTaskRepository::class ->
-                    repository as T
-
-                type == SampleDiagnostics::class || type == InMemorySampleDiagnostics::class ->
-                    diagnostics as T
-
-                else -> error("No binding for ${type.qualifiedName} (qualifier=$qualifier)")
+    private fun testRegistry(
+        repository: SampleTaskRepository,
+        diagnostics: SampleDiagnostics
+    ): AtomFactoryRegistry {
+        val entry = Atoms.factory<TaskAtom, TaskState, SampleTaskParams>(
+            create = { scope, handle, _ ->
+                TaskAtom(
+                    scope = scope,
+                    handle = handle,
+                    repository = repository,
+                    diagnostics = diagnostics
+                )
             }
+        ) { params ->
+            TaskAtom.initial(params)
+        }
+
+        return object : AtomFactoryRegistry {
+            override fun entryFor(type: KClass<out AtomLifecycle>) =
+                if (type == TaskAtom::class) entry else null
         }
     }
 
